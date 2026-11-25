@@ -692,8 +692,9 @@
           comp.width = 256;
           comp.height = 256;
           const ctx = comp.getContext('2d');
-          ctx.drawImage(leftImg, 12, 44, 128, 128);
-          ctx.drawImage(rightImg, 116, 76, 128, 128);
+          ctx.imageSmoothingEnabled = true;
+          drawAspectContained(ctx, leftImg, 10, 44, 128, 128);
+          drawAspectContained(ctx, rightImg, 118, 76, 128, 128);
           return comp;
         }
       }
@@ -728,58 +729,370 @@
         comp.width = 256;
         comp.height = 256;
         const ctx = comp.getContext('2d');
-        ctx.drawImage(mainImg, 24, accessoryCode === '1f451' ? 44 : 24, 208, 208);
+        ctx.imageSmoothingEnabled = true;
+        drawAspectContained(ctx, mainImg, 24, accessoryCode === '1f451' ? 44 : 24, 208, 208);
 
         if (accessoryCode === '1f576') {
           const shadesImg = await loadEmojiCodeImage('1f576', 0);
-          ctx.drawImage(shadesImg, 54, 78, 148, 72);
+          drawAspectContained(ctx, shadesImg, 54, 78, 148, 72);
         } else if (accessoryCode === '1f451') {
           const crownImg = await loadEmojiCodeImage('1f451', 0);
-          ctx.drawImage(crownImg, 72, 6, 112, 72);
+          drawAspectContained(ctx, crownImg, 72, 6, 112, 72);
         }
         return comp;
       }
 
-      // 3. Fallback: Clean retro pixel emblem for unknown words
+      // 3. Handle "[Color] + [Object]" (e.g., "pink cat", "blue rose", "purple car", "gold crown")
+      const colorMap = {
+        red: 'rgba(239, 68, 68, 0.42)',
+        pink: 'rgba(255, 93, 143, 0.48)',
+        blue: 'rgba(56, 189, 248, 0.45)',
+        green: 'rgba(74, 222, 128, 0.45)',
+        yellow: 'rgba(255, 217, 61, 0.45)',
+        gold: 'rgba(250, 204, 21, 0.48)',
+        purple: 'rgba(168, 85, 247, 0.45)',
+        orange: 'rgba(255, 146, 43, 0.45)'
+      };
+      const colorMatch = subjectPhrase.match(/^(red|pink|blue|green|yellow|gold|purple|orange)\s+(.+)$/);
+      if (colorMatch) {
+        const baseCodes = lookupLexiconExact(colorMatch[2]);
+        if (baseCodes && baseCodes.length > 0) {
+          const chosenCode = baseCodes[variation % baseCodes.length];
+          const mainImg = await loadEmojiCodeImage(chosenCode, Math.floor(variation / baseCodes.length));
+          const comp = document.createElement('canvas');
+          comp.width = 256;
+          comp.height = 256;
+          const ctx = comp.getContext('2d');
+          drawAspectContained(ctx, mainImg, 24, accessoryCode === '1f451' ? 44 : 24, 208, 208);
+
+          ctx.globalCompositeOperation = 'source-atop';
+          ctx.fillStyle = colorMap[colorMatch[1]];
+          ctx.fillRect(0, 0, 256, 256);
+          ctx.globalCompositeOperation = 'source-over';
+
+          if (accessoryCode === '1f576') {
+            const shadesImg = await loadEmojiCodeImage('1f576', 0);
+            drawAspectContained(ctx, shadesImg, 54, 78, 148, 72);
+          } else if (accessoryCode === '1f451') {
+            const crownImg = await loadEmojiCodeImage('1f451', 0);
+            drawAspectContained(ctx, crownImg, 72, 6, 112, 72);
+          }
+          return comp;
+        }
+      }
+
+      // 4. Fallback: Clean retro pixel emblem for unknown words
       return synthesizeCleanEmblem(rawPrompt, variation);
     }
 
-    function synthesizeCleanEmblem(prompt, variation) {
-      const comp = document.createElement('canvas');
-      comp.width = 256;
-      comp.height = 256;
-      const ctx = comp.getContext('2d');
-      const palettes = [
-        ['#FF5D8F', '#FFD93D'],
-        ['#38BDF8', '#4ADE80'],
-        ['#A855F7', '#FFD93D'],
-        ['#FF922B', '#38BDF8']
-      ];
-      const [c1, c2] = palettes[variation % palettes.length];
-      ctx.fillStyle = c1;
-      ctx.beginPath();
-      ctx.roundRect(32, 32, 192, 192, 44);
-      ctx.fill();
-      ctx.lineWidth = 12;
-      ctx.strokeStyle = '#18181B';
-      ctx.stroke();
-
-      ctx.fillStyle = c2;
-      ctx.beginPath();
-      ctx.arc(128, 128, 64, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      const initials = prompt.trim().slice(0, 2).toUpperCase() || 'PX';
-      ctx.fillStyle = '#18181B';
-      ctx.font = 'bold 64px "Plus Jakarta Sans", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(initials, 128, 134);
-      return comp;
+    function drawAspectContained(ctx, img, boxX, boxY, boxW, boxH) {
+      const iw = img.naturalWidth || img.width || boxW;
+      const ih = img.naturalHeight || img.height || boxH;
+      const scale = Math.min(boxW / iw, boxH / ih);
+      const w = iw * scale;
+      const h = ih * scale;
+      const x = boxX + (boxW - w) / 2;
+      const y = boxY + (boxH - h) / 2;
+      ctx.drawImage(img, x, y, w, h);
     }
 
-    async function generatePixelEmoji(prompt, variation) {
+    function synthesizeCleanEmblem(prompt, variation) {
+      const c = document.createElement('canvas');
+      c.width = 256;
+      c.height = 256;
+      const ctx = c.getContext('2d');
+
+      let hash = variation * 131;
+      for (let i = 0; i < prompt.length; i++) {
+        hash = (hash * 31 + prompt.charCodeAt(i)) >>> 0;
+      }
+      const palettes = [
+        ['#FF5D8F', '#FFD93D', '#FFFDF5'],
+        ['#38BDF8', '#4ADE80', '#FFFDF5'],
+        ['#A855F7', '#FFD93D', '#FFFDF5'],
+        ['#FF922B', '#FF5D8F', '#FFFDF5']
+      ];
+      const pal = palettes[hash % palettes.length];
+
+      ctx.fillStyle = pal[0];
+      ctx.beginPath();
+      ctx.roundRect(28, 28, 200, 200, 44);
+      ctx.fill();
+
+      ctx.fillStyle = pal[1];
+      ctx.beginPath();
+      ctx.roundRect(48, 48, 160, 160, 32);
+      ctx.fill();
+
+      const letter = (prompt.trim()[0] || '?').toUpperCase();
+      ctx.fillStyle = '#18181B';
+      ctx.font = 'bold 110px "Silkscreen", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(letter, 128, 134);
+      return c;
+    }
+
+    // =========================================================================
+    // 4. EXPANDED STRICTLY-CATEGORIZED EMOJI LEXICON
+    // =========================================================================
+    const EMOJI_LEXICON = [
+      // Broad categories
+      { keys: ['fruits', 'fruit'], codes: ['1f34e', '1f353', '1f34c', '1f349', '1f34d', '1f351', '1f352', '1f347'] },
+      { keys: ['vegetables', 'veggies', 'vegetable'], codes: ['1f955', '1f966', '1f33d', '1f345', '1f346', '1f952', '1f954', '1f9c5'] },
+      { keys: ['animals', 'animal', 'pets', 'pet'], codes: ['1f431', '1f436', '1f430', '1f98a', '1f43b', '1f43c', '1f981', '1f42f'] },
+      { keys: ['birds', 'bird'], codes: ['1f426', '1f986', '1f989', '1f985', '1f9a9', '1f427', '1f99a', '1f99c'] },
+      { keys: ['flowers', 'flower', 'blossom'], codes: ['1f339', '1f337', '1f33b', '1f33a', '1f338', '1f33c', '1fab7', '1f490'] },
+      { keys: ['food', 'meal', 'snacks', 'snack'], codes: ['1f355', '1f354', '1f35f', '1f32e', '1f363', '1f35c', '1f369', '1f37f'] },
+      { keys: ['desserts', 'dessert', 'sweets', 'sweet', 'candy'], codes: ['1f370', '1f9c1', '1f369', '1f366', '1f36a', '1f36b', '1f36d', '1f36c'] },
+      { keys: ['drinks', 'drink', 'beverages', 'beverage'], codes: ['2615', '1f9cb', '1f9c3', '1f379', '1f37a', '1f95b', '1f375', '1f964'] },
+      { keys: ['vehicles', 'vehicle', 'transport'], codes: ['1f697', '1f68c', '1f682', '2708', '26f5', '1f6b2', '1f3cd', '1f680'] },
+      { keys: ['tools', 'tool'], codes: ['1f528', '1f527', '1fa9b', '1fa9a', '1fa93', '26cf', '1f9f0', '2699'] },
+      { keys: ['clothes', 'clothing', 'fashion'], codes: ['1f455', '1f457', '1f456', '1f9e5', '1f45f', '1f9e2', '1f9e3', '1f9e4'] },
+      { keys: ['instruments', 'music'], codes: ['1f3b8', '1f3b9', '1f941', '1f3ba', '1f3bb', '1f3b7', '1fa97', '1f3b5'] },
+      { keys: ['sports', 'sport'], codes: ['26bd', '1f3c0', '1f3c8', '26be', '1f3be', '1f3d0', '1f3c9', '1f3b1'] },
+      { keys: ['weather'], codes: ['2600', '1f327', '26c8', '1f328', '1f308', '1f32a', '2601', '26a1'] },
+      { keys: ['space', 'galaxy', 'universe'], codes: ['1f680', '1fa90', '1f319', '2b50', '1f6f8', '1f47d', '1f468-200d-1f680', '2604'] },
+      { keys: ['furniture'], codes: ['1fa91', '1f6cb', '1f6cf', '1f6aa', '1fa9f', '1fa9e', '1f6c1', '1f6bd'] },
+      { keys: ['electronics', 'tech', 'gadgets'], codes: ['1f4f1', '1f4bb', '1f5a5', '1f3ae', '1f3a7', '1f4f7', '1f4fa', '1f50b'] },
+
+      // Animals (strictly separated)
+      { keys: ['cat', 'kitty', 'kitten', 'cats'], codes: ['1f431', '1f408', '1f63a', '1f638', '1f63b', '1f408-2b1b'] },
+      { keys: ['black cat'], codes: ['1f408-2b1b', '1f431'] },
+      { keys: ['dog', 'puppy', 'golden retriever puppy', 'puppies', 'dogs'], codes: ['1f436', '1f415', '1f429', '1f9ae'] },
+      { keys: ['duck', 'yellow duck', 'duckling', 'ducks'], codes: ['1f986'] },
+      { keys: ['butterfly', 'monarch butterfly', 'butterflies'], codes: ['1f98b'] },
+      { keys: ['rabbit', 'bunny', 'bunnies'], codes: ['1f430', '1f407'] },
+      { keys: ['fox'], codes: ['1f98a'] },
+      { keys: ['bear', 'teddy bear'], codes: ['1f43b', '1f9f8'] },
+      { keys: ['panda'], codes: ['1f43c'] },
+      { keys: ['koala'], codes: ['1f428'] },
+      { keys: ['lion'], codes: ['1f981'] },
+      { keys: ['tiger'], codes: ['1f42f', '1f405'] },
+      { keys: ['cow'], codes: ['1f42e', '1f404'] },
+      { keys: ['pig'], codes: ['1f437', '1f416'] },
+      { keys: ['frog'], codes: ['1f438'] },
+      { keys: ['monkey'], codes: ['1f435', '1f412'] },
+      { keys: ['chicken', 'hen', 'chick'], codes: ['1f414', '1f425', '1f423'] },
+      { keys: ['penguin'], codes: ['1f427'] },
+      { keys: ['owl'], codes: ['1f989'] },
+      { keys: ['eagle'], codes: ['1f985'] },
+      { keys: ['flamingo'], codes: ['1f9a9'] },
+      { keys: ['parrot'], codes: ['1f99c'] },
+      { keys: ['swan'], codes: ['1f9a2'] },
+      { keys: ['bee', 'honeybee'], codes: ['1f41d'] },
+      { keys: ['ladybug'], codes: ['1f41e'] },
+      { keys: ['snail'], codes: ['1f40c'] },
+      { keys: ['turtle', 'tortoise'], codes: ['1f422'] },
+      { keys: ['snake'], codes: ['1f40d'] },
+      { keys: ['dinosaur', 'dino', 't-rex'], codes: ['1f996', '1f995'] },
+      { keys: ['whale'], codes: ['1f433', '1f40b'] },
+      { keys: ['dolphin'], codes: ['1f42c'] },
+      { keys: ['fish'], codes: ['1f41f', '1f420', '1f421'] },
+      { keys: ['shark'], codes: ['1f988'] },
+      { keys: ['octopus'], codes: ['1f419'] },
+      { keys: ['crab'], codes: ['1f980'] },
+      { keys: ['shrimp'], codes: ['1f990'] },
+      { keys: ['horse'], codes: ['1f434', '1f40e'] },
+      { keys: ['unicorn'], codes: ['1f984'] },
+      { keys: ['elephant'], codes: ['1f418'] },
+      { keys: ['giraffe'], codes: ['1f992'] },
+      { keys: ['zebra'], codes: ['1f993'] },
+      { keys: ['deer'], codes: ['1f98c'] },
+      { keys: ['hedgehog'], codes: ['1f994'] },
+      { keys: ['bat'], codes: ['1f987'] },
+      { keys: ['wolf'], codes: ['1f43a'] },
+
+      // Flowers & Nature (strictly separated)
+      { keys: ['rose', 'red rose', 'roses'], codes: ['1f339'] },
+      { keys: ['tulip', 'tulips'], codes: ['1f337'] },
+      { keys: ['sunflower', 'sunflowers'], codes: ['1f33b'] },
+      { keys: ['hibiscus'], codes: ['1f33a'] },
+      { keys: ['cherry blossom', 'sakura'], codes: ['1f338'] },
+      { keys: ['lotus'], codes: ['1fab7'] },
+      { keys: ['bouquet'], codes: ['1f490'] },
+      { keys: ['tree', 'pine tree', 'palm tree'], codes: ['1f333', '1f332', '1f334'] },
+      { keys: ['cactus'], codes: ['1f335'] },
+      { keys: ['leaf', 'leaves', 'maple leaf', 'four leaf clover', 'clover'], codes: ['1f340', '1f341', '1f343'] },
+      { keys: ['mushroom'], codes: ['1f344'] },
+
+      // Boats & Vehicles (strictly separated)
+      { keys: ['boat', 'sailboat', 'boats'], codes: ['26f5', '1f6a4'] },
+      { keys: ['speedboat', 'motorboat'], codes: ['1f6a4'] },
+      { keys: ['ship', 'cruise ship', 'ferry'], codes: ['1f6a2', '26f4'] },
+      { keys: ['canoe', 'kayak'], codes: ['1f6f6'] },
+      { keys: ['car', 'cars', 'automobile'], codes: ['1f697', '1f3ce', '1f699'] },
+      { keys: ['taxi', 'cab'], codes: ['1f695'] },
+      { keys: ['bus'], codes: ['1f68c'] },
+      { keys: ['truck', 'pickup truck'], codes: ['1f69a', '1f6fb'] },
+      { keys: ['police car', 'ambulance', 'fire engine'], codes: ['1f693', '1f691', '1f692'] },
+      { keys: ['bicycle', 'bike'], codes: ['1f6b2'] },
+      { keys: ['motorcycle', 'motorbike'], codes: ['1f3cd'] },
+      { keys: ['scooter'], codes: ['1f6f4', '1f6f5'] },
+      { keys: ['train', 'subway', 'metro'], codes: ['1f682', '1f686', '1f687'] },
+      { keys: ['airplane', 'plane', 'jet'], codes: ['2708', '1f6e9'] },
+      { keys: ['helicopter'], codes: ['1f681'] },
+      { keys: ['rocket', 'spaceship'], codes: ['1f680'] },
+      { keys: ['ufo', 'flying saucer'], codes: ['1f6f8'] },
+
+      // Fruits, Foods & Kitchen Items
+      { keys: ['apple', 'red apple'], codes: ['1f34e'] },
+      { keys: ['green apple'], codes: ['1f34f'] },
+      { keys: ['banana'], codes: ['1f34c'] },
+      { keys: ['strawberry', 'strawberries'], codes: ['1f353'] },
+      { keys: ['watermelon'], codes: ['1f349'] },
+      { keys: ['pineapple'], codes: ['1f34d'] },
+      { keys: ['peach'], codes: ['1f351'] },
+      { keys: ['cherries', 'cherry'], codes: ['1f352'] },
+      { keys: ['grapes', 'grape'], codes: ['1f347'] },
+      { keys: ['orange', 'tangerine', 'mandarin'], codes: ['1f34a'] },
+      { keys: ['lemon'], codes: ['1f34b'] },
+      { keys: ['mango'], codes: ['1f96d'] },
+      { keys: ['kiwi'], codes: ['1f95d'] },
+      { keys: ['blueberry', 'blueberries'], codes: ['1fad0'] },
+      { keys: ['coconut'], codes: ['1f965'] },
+      { keys: ['avocado', 'avocado toast'], codes: ['1f951'] },
+      { keys: ['tomato'], codes: ['1f345'] },
+      { keys: ['carrot'], codes: ['1f955'] },
+      { keys: ['corn'], codes: ['1f33d'] },
+      { keys: ['broccoli'], codes: ['1f966'] },
+      { keys: ['potato', 'fries', 'french fries'], codes: ['1f954', '1f35f'] },
+      { keys: ['bread', 'toast'], codes: ['1f35e', '1f956', '1f950'] },
+      { keys: ['butter'], codes: ['1f9c8'] },
+      { keys: ['cheese'], codes: ['1f9c0'] },
+      { keys: ['egg', 'fried egg'], codes: ['1f373', '1f95a'] },
+      { keys: ['pizza'], codes: ['1f355'] },
+      { keys: ['burger', 'hamburger', 'cheeseburger'], codes: ['1f354'] },
+      { keys: ['hotdog', 'hot dog'], codes: ['1f32d'] },
+      { keys: ['taco'], codes: ['1f32e'] },
+      { keys: ['burrito'], codes: ['1f32f'] },
+      { keys: ['sandwich'], codes: ['1f96a'] },
+      { keys: ['sushi'], codes: ['1f363'] },
+      { keys: ['ramen', 'noodles'], codes: ['1f35c'] },
+      { keys: ['cake', 'birthday cake', 'shortcake'], codes: ['1f370', '1f382'] },
+      { keys: ['cupcake'], codes: ['1f9c1'] },
+      { keys: ['donut', 'doughnut'], codes: ['1f369'] },
+      { keys: ['cookie'], codes: ['1f36a'] },
+      { keys: ['chocolate'], codes: ['1f36b'] },
+      { keys: ['ice cream'], codes: ['1f366', '1f368'] },
+      { keys: ['popcorn'], codes: ['1f37f'] },
+      { keys: ['honey'], codes: ['1f36f'] },
+      { keys: ['coffee', 'tea', 'mug'], codes: ['2615', '1f375'] },
+      { keys: ['boba', 'bubble tea'], codes: ['1f9cb'] },
+      { keys: ['juice', 'juice box'], codes: ['1f9c3'] },
+      { keys: ['milk', 'glass'], codes: ['1f95b'] },
+      { keys: ['bottle', 'baby bottle', 'water bottle'], codes: ['1f37c', '1f9f4'] },
+      { keys: ['jar'], codes: ['1fad9'] },
+      { keys: ['knife', 'kitchen knife', 'butter knife'], codes: ['1f52a'] },
+      { keys: ['spoon'], codes: ['1f944'] },
+      { keys: ['fork'], codes: ['1f374'] },
+      { keys: ['plate', 'fork and knife with plate'], codes: ['1f37d'] },
+      { keys: ['bowl'], codes: ['1f963'] },
+      { keys: ['pan', 'frying pan', 'pot'], codes: ['1f373', '1f372'] },
+
+      // Household, Furniture & Everyday Objects
+      { keys: ['bed'], codes: ['1f6cf'] },
+      { keys: ['pillow'], codes: ['1f4ad', '1f9f6'] },
+      { keys: ['chair'], codes: ['1fa91'] },
+      { keys: ['couch', 'sofa'], codes: ['1f6cb'] },
+      { keys: ['door'], codes: ['1f6aa'] },
+      { keys: ['window'], codes: ['1fa9f'] },
+      { keys: ['mirror'], codes: ['1fa9e'] },
+      { keys: ['toilet'], codes: ['1f6bd'] },
+      { keys: ['bathtub', 'bath'], codes: ['1f6c1'] },
+      { keys: ['shower'], codes: ['1f6bf'] },
+      { keys: ['soap', 'sponge', 'bucket', 'broom'], codes: ['1f9fc', '1f9fd', '1faa3', '1f9f9'] },
+      { keys: ['toothbrush'], codes: ['1faa5'] },
+      { keys: ['toilet paper'], codes: ['1f9fb'] },
+      { keys: ['basket', 'trash can', 'box'], codes: ['1f9fa', '1f5d1', '1f4e6'] },
+      { keys: ['shopping cart', 'cart'], codes: ['1f6d2'] },
+      { keys: ['table', 'desk'], codes: ['1fa91'] },
+      { keys: ['lamp', 'lightbulb', 'flashlight', 'candle'], codes: ['1f4a1', '1f526', '1f56f'] },
+      { keys: ['hammer'], codes: ['1f528'] },
+      { keys: ['wrench'], codes: ['1f527'] },
+      { keys: ['screwdriver'], codes: ['1fa9b'] },
+      { keys: ['saw'], codes: ['1fa9a'] },
+      { keys: ['axe'], codes: ['1fa93'] },
+      { keys: ['pickaxe'], codes: ['26cf'] },
+      { keys: ['nail', 'screw', 'bolt'], codes: ['1f529'] },
+      { keys: ['gear'], codes: ['2699'] },
+      { keys: ['magnet'], codes: ['1f9f2'] },
+      { keys: ['ladder'], codes: ['1fa9c'] },
+      { keys: ['brick'], codes: ['1f9f1'] },
+      { keys: ['lock', 'padlock'], codes: ['1f512'] },
+      { keys: ['key'], codes: ['1f511', '1f5dd'] },
+      { keys: ['needle', 'thread', 'yarn'], codes: ['1faa1', '1f9f5', '1f9f6'] },
+      { keys: ['scissors'], codes: ['2702'] },
+      { keys: ['pencil', 'pen', 'crayon', 'paintbrush'], codes: ['270f', '1f58a', '1f58d', '1f58c'] },
+      { keys: ['book', 'books', 'notebook'], codes: ['1f4d6', '1f4da', '1f4d3'] },
+      { keys: ['backpack', 'bag'], codes: ['1f392', '1f45c'] },
+      { keys: ['umbrella'], codes: ['2602', '2614'] },
+      { keys: ['phone', 'smartphone', 'mobile'], codes: ['1f4f1'] },
+      { keys: ['laptop', 'computer'], codes: ['1f4bb', '1f5a5'] },
+      { keys: ['camera'], codes: ['1f4f7'] },
+      { keys: ['tv', 'television'], codes: ['1f4fa'] },
+      { keys: ['headphones'], codes: ['1f3a7'] },
+      { keys: ['microphone', 'mic'], codes: ['1f3a4'] },
+      { keys: ['controller', 'gamepad', 'video game'], codes: ['1f3ae'] },
+      { keys: ['guitar'], codes: ['1f3b8'] },
+      { keys: ['piano'], codes: ['1f3b9'] },
+      { keys: ['drum'], codes: ['1f941'] },
+      { keys: ['crown'], codes: ['1f451'] },
+      { keys: ['ring', 'diamond', 'gem'], codes: ['1f48d', '1f48e'] },
+      { keys: ['hat', 'cap', 'graduation cap'], codes: ['1f9e2', '1f452', '1f393'] },
+      { keys: ['glasses', 'sunglasses'], codes: ['1f453', '1f576'] },
+      { keys: ['shirt', 'tshirt', 't-shirt'], codes: ['1f455'] },
+      { keys: ['dress'], codes: ['1f457'] },
+      { keys: ['shoe', 'sneaker', 'boot'], codes: ['1f45f', '1f97e'] },
+
+      // Hearts, Shapes, Weather, Fantasy & Characters
+      { keys: ['pink heart'], codes: ['1fa77'] },
+      { keys: ['red heart', 'heart', 'love'], codes: ['2764', '1f496', '1f497'] },
+      { keys: ['blue heart'], codes: ['1f499'] },
+      { keys: ['purple heart'], codes: ['1f49c'] },
+      { keys: ['yellow heart', 'gold heart'], codes: ['1f49b'] },
+      { keys: ['green heart'], codes: ['1f49a'] },
+      { keys: ['orange heart'], codes: ['1f9e1'] },
+      { keys: ['black heart'], codes: ['1f5a4'] },
+      { keys: ['white heart'], codes: ['1f90d'] },
+      { keys: ['star', 'gold star'], codes: ['2b50', '1f31f'] },
+      { keys: ['sun'], codes: ['2600', '1f31e'] },
+      { keys: ['moon'], codes: ['1f319', '1f31d'] },
+      { keys: ['cloud'], codes: ['2601'] },
+      { keys: ['rainbow'], codes: ['1f308'] },
+      { keys: ['fire', 'flame'], codes: ['1f525'] },
+      { keys: ['water', 'wave', 'droplet'], codes: ['1f30a', '1f4a7'] },
+      { keys: ['snowflake', 'snow'], codes: ['2744', '26c4'] },
+      { keys: ['lightning', 'bolt'], codes: ['26a1'] },
+      { keys: ['ghost'], codes: ['1f47b'] },
+      { keys: ['alien'], codes: ['1f47d', '1f47e'] },
+      { keys: ['robot'], codes: ['1f916'] },
+      { keys: ['skull'], codes: ['1f480'] },
+      { keys: ['pumpkin', 'jack-o-lantern'], codes: ['1f383'] },
+      { keys: ['wizard', 'space wizard', 'mage'], codes: ['1f9d9'] },
+      { keys: ['fairy'], codes: ['1f9da'] },
+      { keys: ['mermaid'], codes: ['1f9dc'] },
+      { keys: ['dragon'], codes: ['1f409', '1f432'] },
+      { keys: ['sword', 'swords'], codes: ['2694', '1f5e1'] },
+      { keys: ['shield'], codes: ['1f6e1'] },
+      { keys: ['bow', 'arrow', 'bow and arrow'], codes: ['1f3f9'] },
+      { keys: ['potion'], codes: ['1f9ea'] },
+      { keys: ['crystal ball', 'magic'], codes: ['1f52e', '2728'] },
+      { keys: ['trophy', 'medal'], codes: ['1f3c6', '1f3c5'] },
+      { keys: ['gift', 'present'], codes: ['1f381'] },
+      { keys: ['balloon'], codes: ['1f388'] },
+      { keys: ['smile', 'happy', 'smiley'], codes: ['1f604', '1f60a'] },
+      { keys: ['cool face'], codes: ['1f60e'] },
+      { keys: ['wink'], codes: ['1f609'] },
+      { keys: ['cry', 'sad'], codes: ['1f622', '1f62d'] },
+      { keys: ['angry', 'mad'], codes: ['1f621', '1f620'] },
+      { keys: ['party'], codes: ['1f973', '1f389'] }
+    ];
+
+    // =========================================================================
+    // 5. GENERATION PIPELINE & PIXEL QUANTIZATION RENDERER
+    // =========================================================================
+    async function generatePixelEmoji(prompt, variation = 0) {
       if (state.isGenerating) return;
       state.isGenerating = true;
       state.currentPrompt = prompt;
@@ -788,132 +1101,51 @@
       const loadingPanel = document.getElementById('loading-panel');
       const loadedPanel = document.getElementById('loaded-panel');
       const titleEl = document.getElementById('stage-prompt-title');
-      const badgeEl = document.getElementById('variation-badge');
+      const headlineEl = document.getElementById('result-headline');
+      const versionBadge = document.getElementById('variation-badge');
 
       if (stage) stage.classList.remove('hidden');
       if (loadingPanel) loadingPanel.classList.remove('hidden');
       if (loadedPanel) loadedPanel.classList.add('hidden');
       if (titleEl) titleEl.textContent = `"${prompt}"`;
-      if (badgeEl) {
-        badgeEl.textContent = `Version #${variation + 1}`;
-        badgeEl.classList.remove('hidden');
+      if (headlineEl) headlineEl.textContent = capitalizeTitle(prompt);
+      if (versionBadge) {
+        versionBadge.textContent = `Version #${variation + 1}`;
+        versionBadge.classList.remove('hidden');
       }
 
+      if (stage) stage.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       startLoadingAnimations();
-      stage?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
       try {
-        const sourceCanvas = await buildCompositeCanvasFromPrompt(prompt, variation);
-        state.rawImageElement = sourceCanvas;
+        const compositeCanvas = await buildCompositeCanvasFromPrompt(prompt, variation);
+        state.rawImageElement = compositeCanvas;
 
         stopLoadingAnimations(true);
         if (loadingPanel) loadingPanel.classList.add('hidden');
         if (loadedPanel) loadedPanel.classList.remove('hidden');
 
-        const headline = document.getElementById('result-headline');
-        if (headline) headline.textContent = capitalizeTitle(prompt);
-
         renderQuantizedEmoji();
 
         const mainCanvas = document.getElementById('emoji-canvas');
         if (mainCanvas) {
-          addToRecentCreations(prompt, mainCanvas.toDataURL('image/png'), sourceCanvas);
+          addToRecentCreations(prompt, mainCanvas.toDataURL('image/png'), compositeCanvas);
         }
       } catch (err) {
-        stopLoadingAnimations(false);
-        showToast('⚠️ Could not generate right now — try again!', 'error');
+        stopLoadingAnimations(true);
+        const fallback = synthesizeCleanEmblem(prompt, variation);
+        state.rawImageElement = fallback;
+        if (loadingPanel) loadingPanel.classList.add('hidden');
+        if (loadedPanel) loadedPanel.classList.remove('hidden');
+        renderQuantizedEmoji();
       } finally {
         state.isGenerating = false;
       }
     }
 
-    function drawPixelatedToCanvas(targetCanvas, sourceImg, gridSize, transparentBg, variation = 0) {
-      const outW = targetCanvas.width;
-      const outH = targetCanvas.height;
-      const ctx = targetCanvas.getContext('2d');
-      ctx.clearRect(0, 0, outW, outH);
-
-      if (!transparentBg) {
-        ctx.fillStyle = '#FFFDF5';
-        ctx.fillRect(0, 0, outW, outH);
-      }
-
-      // Downsample onto small pixel grid
-      const small = document.createElement('canvas');
-      small.width = gridSize;
-      small.height = gridSize;
-      const sCtx = small.getContext('2d');
-      sCtx.imageSmoothingEnabled = true;
-
-      // Subtle pose/hue variety across Try Again clicks (6+ distinct versions)
-      const flipH = variation % 4 === 2;
-      const hueShifts = [0, 0, 0, 14, -14, 28, -24, 42];
-      const hue = hueShifts[variation % hueShifts.length];
-
-      sCtx.save();
-      if (hue !== 0 && 'filter' in sCtx) {
-        sCtx.filter = `hue-rotate(${hue}deg) saturate(1.12)`;
-      }
-      if (flipH) {
-        sCtx.translate(gridSize, 0);
-        sCtx.scale(-1, 1);
-      }
-      const pad = Math.max(1, Math.floor(gridSize * 0.06));
-      sCtx.drawImage(sourceImg, pad, pad, gridSize - pad * 2, gridSize - pad * 2);
-      sCtx.restore();
-
-      // Quantize colors & add crisp 1px dark retro outline around opaque pixels
-      const imgData = sCtx.getImageData(0, 0, gridSize, gridSize);
-      const d = imgData.data;
-      const alphaMask = new Uint8Array(gridSize * gridSize);
-
-      for (let i = 0; i < d.length; i += 4) {
-        const idx = i / 4;
-        if (d[i + 3] < 115) {
-          d[i + 3] = 0;
-          alphaMask[idx] = 0;
-        } else {
-          d[i + 3] = 255;
-          d[i] = Math.min(255, Math.round(d[i] / 24) * 24);
-          d[i + 1] = Math.min(255, Math.round(d[i + 1] / 24) * 24);
-          d[i + 2] = Math.min(255, Math.round(d[i + 2] / 24) * 24);
-          alphaMask[idx] = 1;
-        }
-      }
-
-      // Add crisp dark pixel border around silhouette
-      for (let y = 0; y < gridSize; y++) {
-        for (let x = 0; x < gridSize; x++) {
-          const idx = y * gridSize + x;
-          if (alphaMask[idx] === 0) {
-            const hasNeighbor =
-              (x > 0 && alphaMask[idx - 1] === 1) ||
-              (x < gridSize - 1 && alphaMask[idx + 1] === 1) ||
-              (y > 0 && alphaMask[idx - gridSize] === 1) ||
-              (y < gridSize - 1 && alphaMask[idx + gridSize] === 1);
-            if (hasNeighbor) {
-              const p = idx * 4;
-              d[p] = 24;
-              d[p + 1] = 24;
-              d[p + 2] = 27;
-              d[p + 3] = 255;
-            }
-          }
-        }
-      }
-
-      sCtx.putImageData(imgData, 0, 0);
-
-      // Upscale crisply without smoothing
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(small, 0, 0, outW, outH);
-    }
-
     function renderQuantizedEmoji() {
       const canvas = document.getElementById('emoji-canvas');
       if (!canvas || !state.rawImageElement) return;
-      canvas.width = 512;
-      canvas.height = 512;
       drawPixelatedToCanvas(
         canvas,
         state.rawImageElement,
@@ -923,860 +1155,273 @@
       );
     }
 
-    // =========================================================================
-    // 4. MULTI-BACKEND REAL ICON & AI PIXEL IMAGE FETCHING (WORKS IN ANY BROWSER)
-    // =========================================================================
+    function drawPixelatedToCanvas(targetCanvas, sourceImg, gridSize = 32, transparentBg = true, variation = 0) {
+      const outSize = targetCanvas.width || 512;
+      targetCanvas.width = outSize;
+      targetCanvas.height = outSize;
 
-    // Comprehensive strictly-categorized Unicode Emoji lexicon (1,200+ objects, tools,
-    // household items, animals, foods, vehicles, nature, clothing, tech, sports, etc.)
-    // for instant, zero-API-call CDN rendering via jsDelivr (Twemoji, OpenMoji, Noto).
-    const EMOJI_LEXICON = [
-      // Animals (strictly isolated by exact species)
-      { keys: ['cat', 'kitty', 'kitten', 'tabby', 'feline', 'meow'], codes: ['1f431', '1f408', '1f63a', '1f638', '1f63b', '1f408-200d-2b1b'] },
-      { keys: ['black cat'], codes: ['1f408-200d-2b1b'] },
-      { keys: ['dog', 'puppy', 'doggy', 'retriever', 'hound', 'woof', 'pup'], codes: ['1f436', '1f415', '1f429', '1f9ae', '1f415-200d-1f9ba'] },
-      { keys: ['poodle'], codes: ['1f429'] },
-      { keys: ['duck', 'duckling', 'mallard', 'quack'], codes: ['1f986', '1f424', '1f425'] },
-      { keys: ['butterfly', 'moth', 'monarch'], codes: ['1f98b'] },
-      { keys: ['frog', 'toad'], codes: ['1f438'] },
-      { keys: ['unicorn'], codes: ['1f984'] },
-      { keys: ['panda'], codes: ['1f43c'] },
-      { keys: ['dinosaur', 'dino', 'trex', 't-rex', 'sauropod'], codes: ['1f996', '1f995'] },
-      { keys: ['dragon'], codes: ['1f409', '1f432'] },
-      { keys: ['fox'], codes: ['1f98a'] },
-      { keys: ['teddy', 'teddy bear', 'plush', 'plushie', 'toy'], codes: ['1f9f8'] },
-      { keys: ['polar bear'], codes: ['1f43b-200d-2744-fe0f'] },
-      { keys: ['bear'], codes: ['1f43b', '1f43b-200d-2744-fe0f'] },
-      { keys: ['koala'], codes: ['1f428'] },
-      { keys: ['tiger'], codes: ['1f42f', '1f405'] },
-      { keys: ['lion'], codes: ['1f981'] },
-      { keys: ['leopard', 'cheetah', 'jaguar'], codes: ['1f406'] },
-      { keys: ['cow', 'cattle', 'ox', 'buffalo', 'bull'], codes: ['1f42e', '1f404', '1f402', '1f403'] },
-      { keys: ['pig', 'piggy', 'boar', 'hog'], codes: ['1f437', '1f416', '1f417'] },
-      { keys: ['monkey', 'chimp', 'chimpanzee'], codes: ['1f435', '1f412'] },
-      { keys: ['gorilla', 'ape', 'orangutan'], codes: ['1f98d', '1f9a7'] },
-      { keys: ['rabbit', 'bunny', 'hare'], codes: ['1f430', '1f407'] },
-      { keys: ['hamster', 'guinea pig'], codes: ['1f439'] },
-      { keys: ['mouse', 'rat', 'rodent'], codes: ['1f42d', '1f401', '1f400'] },
-      { keys: ['hedgehog', 'porcupine'], codes: ['1f994'] },
-      { keys: ['squirrel', 'chipmunk'], codes: ['1f43f'] },
-      { keys: ['beaver'], codes: ['1f9ab'] },
-      { keys: ['otter'], codes: ['1f9a6'] },
-      { keys: ['sloth'], codes: ['1f9a5'] },
-      { keys: ['skunk'], codes: ['1f9a8'] },
-      { keys: ['badger'], codes: ['1f9a1'] },
-      { keys: ['raccoon'], codes: ['1f99d'] },
-      { keys: ['kangaroo', 'wallaby'], codes: ['1f998'] },
-      { keys: ['horse', 'pony', 'stallion', 'mare'], codes: ['1f434', '1f40e'] },
-      { keys: ['deer', 'reindeer', 'stag', 'elk', 'moose'], codes: ['1f98c'] },
-      { keys: ['sheep', 'lamb', 'ram'], codes: ['1f411', '1f40f'] },
-      { keys: ['goat'], codes: ['1f410'] },
-      { keys: ['camel', 'llama', 'alpaca'], codes: ['1f42b', '1f42a', '1f999'] },
-      { keys: ['elephant', 'mammoth'], codes: ['1f418', '1f9a3'] },
-      { keys: ['rhino', 'rhinoceros'], codes: ['1f98f'] },
-      { keys: ['hippo', 'hippopotamus'], codes: ['1f99b'] },
-      { keys: ['giraffe'], codes: ['1f992'] },
-      { keys: ['zebra'], codes: ['1f993'] },
-      { keys: ['wolf'], codes: ['1f43a'] },
-      { keys: ['bat'], codes: ['1f987'] },
-      { keys: ['chicken', 'rooster', 'hen', 'chick'], codes: ['1f414', '1f413', '1f423', '1f425'] },
-      { keys: ['turkey'], codes: ['1f983'] },
-      { keys: ['peacock'], codes: ['1f99a'] },
-      { keys: ['owl'], codes: ['1f989'] },
-      { keys: ['penguin'], codes: ['1f427'] },
-      { keys: ['flamingo'], codes: ['1f9a9'] },
-      { keys: ['parrot', 'macaw', 'cockatoo'], codes: ['1f99c'] },
-      { keys: ['eagle', 'hawk', 'falcon'], codes: ['1f985'] },
-      { keys: ['bird', 'dove', 'crow', 'raven', 'pigeon', 'sparrow'], codes: ['1f426', '1f54a', '1f426-200d-2b1b'] },
-      { keys: ['swan', 'goose'], codes: ['1f9a2', '1fabf'] },
-      { keys: ['fish', 'goldfish', 'blowfish', 'trout', 'salmon'], codes: ['1f420', '1f41f', '1f421'] },
-      { keys: ['shark'], codes: ['1f988'] },
-      { keys: ['whale', 'orca'], codes: ['1f433', '1f40b'] },
-      { keys: ['dolphin'], codes: ['1f42c'] },
-      { keys: ['seal', 'sea lion', 'walrus'], codes: ['1f9ad'] },
-      { keys: ['octopus'], codes: ['1f419'] },
-      { keys: ['squid'], codes: ['1f991'] },
-      { keys: ['crab'], codes: ['1f980'] },
-      { keys: ['lobster'], codes: ['1f99e'] },
-      { keys: ['shrimp', 'prawn'], codes: ['1f990'] },
-      { keys: ['oyster', 'clam', 'shell', 'seashell'], codes: ['1f9aa', '1f41a'] },
-      { keys: ['turtle', 'tortoise'], codes: ['1f422'] },
-      { keys: ['crocodile', 'alligator'], codes: ['1f40a'] },
-      { keys: ['lizard', 'gecko', 'iguana', 'chameleon'], codes: ['1f98e'] },
-      { keys: ['jellyfish'], codes: ['1fabc'] },
-      { keys: ['coral'], codes: ['1fab8'] },
-      { keys: ['bee', 'honeybee', 'wasp', 'bumblebee'], codes: ['1f41d'] },
-      { keys: ['ladybug', 'beetle'], codes: ['1f41e', '1fab2'] },
-      { keys: ['ant'], codes: ['1f41c'] },
-      { keys: ['caterpillar', 'worm', 'bug', 'centipede'], codes: ['1f41b', '1fab1'] },
-      { keys: ['cricket', 'grasshopper', 'locust'], codes: ['1f997'] },
-      { keys: ['cockroach', 'roach'], codes: ['1fab3'] },
-      { keys: ['fly', 'mosquito'], codes: ['1fab0', '1f99f'] },
-      { keys: ['snail', 'slug'], codes: ['1f40c'] },
-      { keys: ['spider', 'tarantula', 'web', 'spiderweb'], codes: ['1f577', '1f578'] },
-      { keys: ['scorpion'], codes: ['1f982'] },
-      { keys: ['snake', 'python', 'cobra', 'viper'], codes: ['1f40d'] },
-      { keys: ['feather', 'wing'], codes: ['1fab6', '1fabd'] },
-      { keys: ['paw', 'pawprint', 'footprint'], codes: ['1f43e', '1f463'] },
-      { keys: ['bone'], codes: ['1f9b4'] },
+      const small = document.createElement('canvas');
+      small.width = gridSize;
+      small.height = gridSize;
+      const sCtx = small.getContext('2d');
+      sCtx.imageSmoothingEnabled = true;
 
-      // Flowers & Nature (each flower & plant strictly separated!)
-      { keys: ['rose', 'roses'], codes: ['1f339'] },
-      { keys: ['wilted rose'], codes: ['1f940'] },
-      { keys: ['sunflower'], codes: ['1f33b'] },
-      { keys: ['tulip'], codes: ['1f337'] },
-      { keys: ['hibiscus'], codes: ['1f33a'] },
-      { keys: ['cherry blossom', 'sakura'], codes: ['1f338'] },
-      { keys: ['lotus'], codes: ['1fab7'] },
-      { keys: ['blossom', 'daisy'], codes: ['1f33c'] },
-      { keys: ['bouquet'], codes: ['1f490'] },
-      { keys: ['flower'], codes: ['1f338', '1f33c', '1f33a', '1f337'] },
-      { keys: ['tree', 'forest', 'oak', 'pine', 'wood'], codes: ['1f333', '1f332'] },
-      { keys: ['christmas tree', 'xmas tree'], codes: ['1f384'] },
-      { keys: ['palm', 'palm tree'], codes: ['1f334'] },
-      { keys: ['cactus'], codes: ['1f335'] },
-      { keys: ['bamboo'], codes: ['1f38d'] },
-      { keys: ['mushroom', 'toadstool', 'fungus'], codes: ['1f344'] },
-      { keys: ['clover', 'shamrock'], codes: ['1f340', '2618'] },
-      { keys: ['maple leaf'], codes: ['1f341'] },
-      { keys: ['leaf', 'leaves', 'herb', 'fern'], codes: ['1f33f', '1f341', '1f343'] },
-      { keys: ['plant', 'sprout', 'seedling', 'potted plant'], codes: ['1fab4', '1f331'] },
-      { keys: ['rock', 'stone', 'boulder', 'pebble'], codes: ['1faa8'] },
-      { keys: ['log', 'firewood', 'timber'], codes: ['1fab5'] },
-      { keys: ['nest', 'bird nest'], codes: ['1fab9', '1faba'] },
-      { keys: ['mountain', 'volcano', 'hill', 'peak'], codes: ['26f0', '1f3d4', '1f30b'] },
-      { keys: ['beach', 'island'], codes: ['1f3d6', '1f3dd'] },
-      { keys: ['desert', 'dune'], codes: ['1f3dc'] },
-      { keys: ['wave', 'ocean', 'sea', 'tsunami'], codes: ['1f30a'] },
+      sCtx.save();
+      const flipHorizontal = variation % 8 >= 4;
+      if (flipHorizontal) {
+        sCtx.translate(gridSize, 0);
+        sCtx.scale(-1, 1);
+      }
+      const hueShifts = [0, 0, 0, 0, 18, -18, 35, -35];
+      const hueDeg = hueShifts[variation % hueShifts.length];
+      if (hueDeg !== 0 && 'filter' in sCtx) {
+        sCtx.filter = `hue-rotate(${hueDeg}deg) saturate(1.12)`;
+      }
 
-      // Vehicles, Boats & Transport (strictly separated!)
-      { keys: ['sailboat'], codes: ['26f5'] },
-      { keys: ['speedboat', 'motorboat'], codes: ['1f6a4'] },
-      { keys: ['ship', 'cruise ship', 'ferry', 'liner'], codes: ['1f6a2', '1f6f3', '26f4'] },
-      { keys: ['canoe', 'kayak', 'rowboat'], codes: ['1f6f6'] },
-      { keys: ['boat', 'yacht', 'vessel'], codes: ['26f5', '1f6a4', '1f6f6'] },
-      { keys: ['anchor'], codes: ['2693'] },
-      { keys: ['lifebuoy', 'life ring', 'buoy'], codes: ['1f6df'] },
-      { keys: ['taxi', 'cab'], codes: ['1f695'] },
-      { keys: ['race car', 'racecar', 'formula', 'f1'], codes: ['1f3ce'] },
-      { keys: ['car', 'automobile', 'sedan', 'suv', 'jeep'], codes: ['1f697', '1f699'] },
-      { keys: ['police car', 'police', 'cop car'], codes: ['1f693'] },
-      { keys: ['ambulance'], codes: ['1f691'] },
-      { keys: ['firetruck', 'fire truck', 'fire engine'], codes: ['1f692'] },
-      { keys: ['tractor'], codes: ['1f69c'] },
-      { keys: ['truck', 'pickup', 'lorry', 'van'], codes: ['1f69a', '1f6fb', '1f69b'] },
-      { keys: ['bus', 'minibus', 'trolley'], codes: ['1f68c', '1f68e', '1f690'] },
-      { keys: ['train', 'locomotive', 'subway', 'metro', 'tram', 'monorail'], codes: ['1f686', '1f682', '1f684', '1f687', '1f68a'] },
-      { keys: ['airplane', 'plane', 'jet', 'aircraft'], codes: ['2708', '1f6e9', '1f6eb'] },
-      { keys: ['helicopter', 'chopper'], codes: ['1f681'] },
-      { keys: ['parachute'], codes: ['1fa82'] },
-      { keys: ['bike', 'bicycle'], codes: ['1f6b2'] },
-      { keys: ['scooter', 'vespa', 'moped'], codes: ['1f6f5', '1f6f4'] },
-      { keys: ['motorcycle', 'motorbike'], codes: ['1f3cd'] },
-      { keys: ['skateboard'], codes: ['1f6f9'] },
-      { keys: ['roller skate', 'skates'], codes: ['1f6fc'] },
-      { keys: ['wheel', 'tire'], codes: ['1f6de'] },
-      { keys: ['fuel', 'gas pump', 'gas station'], codes: ['26fd'] },
-      { keys: ['traffic light', 'stoplight'], codes: ['1f6a6', '1f6a5'] },
-      { keys: ['rocket', 'spaceship', 'shuttle'], codes: ['1f680'] },
-      { keys: ['ufo', 'flying saucer'], codes: ['1f6f8'] },
-      { keys: ['satellite'], codes: ['1f6f0'] },
+      const pad = Math.max(2, Math.floor(gridSize * 0.08));
+      drawAspectContained(sCtx, sourceImg, pad, pad, gridSize - pad * 2, gridSize - pad * 2);
+      sCtx.restore();
 
-      // Food, Drinks & Kitchenware (strictly separated!)
-      { keys: ['avocado'], codes: ['1f951'] },
-      { keys: ['pizza'], codes: ['1f355'] },
-      { keys: ['strawberry'], codes: ['1f353'] },
-      { keys: ['blueberry', 'berry', 'berries'], codes: ['1fad0'] },
-      { keys: ['green apple'], codes: ['1f34f'] },
-      { keys: ['apple'], codes: ['1f34e', '1f34f'] },
-      { keys: ['pear'], codes: ['1f350'] },
-      { keys: ['banana'], codes: ['1f34c'] },
-      { keys: ['watermelon'], codes: ['1f349'] },
-      { keys: ['melon', 'cantaloupe'], codes: ['1f348'] },
-      { keys: ['grape', 'grapes'], codes: ['1f347'] },
-      { keys: ['orange', 'tangerine', 'mandarin'], codes: ['1f34a'] },
-      { keys: ['lemon', 'lime', 'citrus'], codes: ['1f34b'] },
-      { keys: ['peach'], codes: ['1f351'] },
-      { keys: ['cherry', 'cherries'], codes: ['1f352'] },
-      { keys: ['pineapple'], codes: ['1f34d'] },
-      { keys: ['mango'], codes: ['1f96d'] },
-      { keys: ['kiwi'], codes: ['1f95d'] },
-      { keys: ['coconut'], codes: ['1f965'] },
-      { keys: ['olive', 'olives'], codes: ['1fad2'] },
-      { keys: ['tomato'], codes: ['1f345'] },
-      { keys: ['eggplant', 'aubergine'], codes: ['1f346'] },
-      { keys: ['carrot'], codes: ['1f955'] },
-      { keys: ['corn', 'maize'], codes: ['1f33d'] },
-      { keys: ['broccoli'], codes: ['1f966'] },
-      { keys: ['lettuce', 'cabbage', 'greens'], codes: ['1f96c'] },
-      { keys: ['cucumber', 'pickle'], codes: ['1f952'] },
-      { keys: ['chili', 'pepper', 'bell pepper', 'jalapeno', 'spicy'], codes: ['1f336', '1fad1'] },
-      { keys: ['potato'], codes: ['1f954'] },
-      { keys: ['sweet potato', 'yam'], codes: ['1f360'] },
-      { keys: ['garlic'], codes: ['1f9c4'] },
-      { keys: ['onion'], codes: ['1f9c5'] },
-      { keys: ['ginger'], codes: ['1fada'] },
-      { keys: ['peas', 'pea pod', 'beans', 'edamame'], codes: ['1fadb', '1fad8'] },
-      { keys: ['peanut', 'peanuts', 'nut', 'chestnut'], codes: ['1f95c', '1f330'] },
-      { keys: ['pumpkin', 'jack o lantern'], codes: ['1f383'] },
-      { keys: ['burger', 'hamburger', 'cheeseburger'], codes: ['1f354'] },
-      { keys: ['fries', 'french fries'], codes: ['1f35f'] },
-      { keys: ['hotdog', 'hot dog', 'sausage'], codes: ['1f32d'] },
-      { keys: ['sandwich'], codes: ['1f96a'] },
-      { keys: ['taco'], codes: ['1f32e'] },
-      { keys: ['burrito', 'wrap'], codes: ['1f32f'] },
-      { keys: ['tamale'], codes: ['1fad4'] },
-      { keys: ['falafel'], codes: ['1f9c6'] },
-      { keys: ['salad'], codes: ['1f957'] },
-      { keys: ['spaghetti', 'pasta'], codes: ['1f35d'] },
-      { keys: ['sushi', 'sashimi'], codes: ['1f363'] },
-      { keys: ['shrimp tempura', 'tempura'], codes: ['1f364'] },
-      { keys: ['bento', 'lunchbox'], codes: ['1f371'] },
-      { keys: ['rice', 'onigiri', 'rice ball', 'rice cracker'], codes: ['1f35a', '1f359', '1f358'] },
-      { keys: ['curry'], codes: ['1f35b'] },
-      { keys: ['dumpling', 'gyoza', 'pierogi'], codes: ['1f95f'] },
-      { keys: ['ramen', 'noodle', 'noodles', 'soup', 'stew', 'pho'], codes: ['1f35c', '1f372'] },
-      { keys: ['fondue', 'pot', 'cooking pot', 'cauldron'], codes: ['1fad5', '1f372'] },
-      { keys: ['pan', 'frying pan', 'skillet'], codes: ['1f373'] },
-      { keys: ['steak', 'meat', 'rib', 'poultry', 'chicken leg'], codes: ['1f969', '1f356', '1f357'] },
-      { keys: ['bacon'], codes: ['1f953'] },
-      { keys: ['pancake', 'pancakes', 'crepe'], codes: ['1f95e'] },
-      { keys: ['waffle'], codes: ['1f9c7'] },
-      { keys: ['pretzel'], codes: ['1f968'] },
-      { keys: ['bagel'], codes: ['1f96f'] },
-      { keys: ['baguette'], codes: ['1f956'] },
-      { keys: ['croissant'], codes: ['1f950'] },
-      { keys: ['flatbread', 'pita', 'naan'], codes: ['1fad3'] },
-      { keys: ['bread', 'toast', 'loaf'], codes: ['1f35e'] },
-      { keys: ['butter'], codes: ['1f9c8'] },
-      { keys: ['salt', 'shaker', 'spice'], codes: ['1f9c2'] },
-      { keys: ['knife', 'kitchen knife', 'chef knife'], codes: ['1f52a'] },
-      { keys: ['fork', 'cutlery', 'utensils'], codes: ['1f374'] },
-      { keys: ['spoon'], codes: ['1f944'] },
-      { keys: ['chopsticks'], codes: ['1f962'] },
-      { keys: ['plate', 'dish'], codes: ['1f37d'] },
-      { keys: ['bowl'], codes: ['1f963'] },
-      { keys: ['cup', 'mug', 'teacup'], codes: ['2615', '1f964'] },
-      { keys: ['bottle', 'baby bottle', 'flask'], codes: ['1f37c', '1f9ea'] },
-      { keys: ['jar', 'mason jar', 'can', 'canned food'], codes: ['1fad9', '1f96b'] },
-      { keys: ['egg'], codes: ['1f373', '1f95a'] },
-      { keys: ['cheese'], codes: ['1f9c0'] },
-      { keys: ['popcorn'], codes: ['1f37f'] },
-      { keys: ['donut', 'doughnut'], codes: ['1f369'] },
-      { keys: ['birthday cake'], codes: ['1f382'] },
-      { keys: ['cake', 'shortcake', 'pastry'], codes: ['1f370', '1f382'] },
-      { keys: ['cupcake', 'muffin'], codes: ['1f9c1'] },
-      { keys: ['pie', 'tart'], codes: ['1f967'] },
-      { keys: ['cookie', 'biscuit'], codes: ['1f36a'] },
-      { keys: ['ice cream', 'icecream', 'gelato', 'sundae'], codes: ['1f368', '1f366', '1f367'] },
-      { keys: ['chocolate', 'candy bar'], codes: ['1f36b'] },
-      { keys: ['lollipop'], codes: ['1f36d'] },
-      { keys: ['candy', 'sweet'], codes: ['1f36c'] },
-      { keys: ['custard', 'pudding', 'flan'], codes: ['1f36e'] },
-      { keys: ['honey', 'honeypot'], codes: ['1f36f'] },
-      { keys: ['boba', 'bubble tea', 'milk tea'], codes: ['1f9cb'] },
-      { keys: ['coffee', 'latte', 'espresso', 'cappuccino'], codes: ['2615'] },
-      { keys: ['tea', 'matcha', 'teapot', 'kettle'], codes: ['1f375', '1fad6'] },
-      { keys: ['juice', 'juice box', 'smoothie'], codes: ['1f9c3'] },
-      { keys: ['milk', 'glass of milk'], codes: ['1f95b'] },
-      { keys: ['soda', 'cola', 'soft drink'], codes: ['1f964'] },
-      { keys: ['water bottle', 'pouring'], codes: ['1fad7'] },
-      { keys: ['beer', 'ale', 'pint'], codes: ['1f37a', '1f37b'] },
-      { keys: ['wine', 'wineglass'], codes: ['1f377'] },
-      { keys: ['champagne', 'prosecco'], codes: ['1f37e', '1f942'] },
-      { keys: ['cocktail', 'martini', 'drink'], codes: ['1f378', '1f379'] },
-      { keys: ['whiskey', 'tumbler'], codes: ['1f943'] },
-      { keys: ['mate', 'yerba'], codes: ['1f9c9'] },
-      { keys: ['ice cube', 'ice'], codes: ['1f9ca'] },
+      const imgData = sCtx.getImageData(0, 0, gridSize, gridSize);
+      const data = imgData.data;
 
-      // Broad Category & Group Words (cycles through diverse items in that category!)
-      { keys: ['fruit', 'fruits'], codes: ['1f34e', '1f353', '1f34c', '1f349', '1f34d', '1f351', '1f352', '1f347'] },
-      { keys: ['vegetable', 'vegetables', 'veggie', 'veggies'], codes: ['1f955', '1f966', '1f345', '1f33d', '1f346', '1f952', '1f336'] },
-      { keys: ['food', 'foods', 'meal', 'snack', 'snacks', 'lunch', 'dinner', 'breakfast'], codes: ['1f355', '1f354', '1f32e', '1f363', '1f35c', '1f95e', '1f35f'] },
-      { keys: ['fast food', 'junk food'], codes: ['1f354', '1f355', '1f35f', '1f32d', '1f32e'] },
-      { keys: ['dessert', 'desserts', 'sweets', 'treat', 'treats'], codes: ['1f370', '1f369', '1f368', '1f9c1', '1f36a', '1f36b'] },
-      { keys: ['drink', 'drinks', 'beverage', 'beverages'], codes: ['1f9cb', '2615', '1f9c3', '1f379', '1f964'] },
-      { keys: ['animal', 'animals', 'pet', 'pets', 'wildlife', 'critter'], codes: ['1f431', '1f436', '1f430', '1f98a', '1f43b', '1f43c', '1f981'] },
-      { keys: ['bird', 'birds'], codes: ['1f426', '1f986', '1f989', '1f99c', '1f427', '1f9a9'] },
-      { keys: ['bug', 'bugs', 'insect', 'insects'], codes: ['1f98b', '1f41d', '1f41e', '1f41b', '1f41c'] },
-      { keys: ['sea animal', 'sea animals', 'ocean animal', 'marine', 'sea life'], codes: ['1f420', '1f419', '1f42c', '1f433', '1f980', '1f422'] },
-      { keys: ['flower', 'flowers', 'floral', 'bloom'], codes: ['1f339', '1f33b', '1f337', '1f338', '1f33a', '1f33c'] },
-      { keys: ['vehicle', 'vehicles', 'transport', 'transportation'], codes: ['1f697', '1f68c', '1f686', '2708', '26f5', '1f680'] },
-      { keys: ['toy', 'toys'], codes: ['1f9f8', '1fa80', '1fa81', '1f3ae', '1f3b2'] },
-      { keys: ['tool', 'tools', 'hardware'], codes: ['1f528', '1f527', '1fa9b', '1fa9a', '1f9f0'] },
-      { keys: ['clothes', 'clothing', 'outfit', 'apparel', 'fashion'], codes: ['1f455', '1f456', '1f457', '1f9e5', '1f45f', '1f9e2'] },
-      { keys: ['instrument', 'instruments', 'musical instrument'], codes: ['1f3b8', '1f3b9', '1f3ba', '1f3b7', '1f941', '1f3bb'] },
-      { keys: ['sport', 'sports', 'ball'], codes: ['26bd', '1f3c0', '1f3c8', '26be', '1f3be', '1f3d0'] },
-      { keys: ['weather'], codes: ['2600', '26c5', '1f327', '26a1', '1f308', '2744'] },
-      { keys: ['space', 'cosmos', 'galaxy', 'universe'], codes: ['1f680', '1fa90', '1f319', '2b50', '1f6f8', '2604'] },
-      { keys: ['furniture'], codes: ['1fa91', '1f6cb', '1f6cf', '1f6aa', '1fa9f'] },
-      { keys: ['electronics', 'tech', 'gadget', 'gadgets', 'device', 'devices'], codes: ['1f4f1', '1f4bb', '1f3ae', '1f3a7', '1f4f7', '1f4fa'] },
+      // Crisp 8-bit color quantization + alpha snap
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] < 95) {
+          data[i + 3] = 0;
+        } else {
+          data[i + 3] = 255;
+          data[i] = Math.min(255, Math.round(data[i] / 24) * 24);
+          data[i + 1] = Math.min(255, Math.round(data[i + 1] / 24) * 24);
+          data[i + 2] = Math.min(255, Math.round(data[i + 2] / 24) * 24);
+        }
+      }
 
-      // Household Furniture, Appliances & Home Objects
-      { keys: ['chair', 'seat', 'stool', 'armchair'], codes: ['1fa91'] },
-      { keys: ['table', 'desk', 'dining table', 'coffee table'], codes: ['1f37d', '1fa91'] },
-      { keys: ['couch', 'sofa', 'loveseat'], codes: ['1f6cb'] },
-      { keys: ['bed', 'mattress', 'bedroom'], codes: ['1f6cf'] },
-      { keys: ['pillow', 'cushion'], codes: ['1f6cb', '1f9f8'] },
-      { keys: ['blanket', 'duvet', 'quilt', 'sheet', 'bedding'], codes: ['1f9e3', '1f6cf'] },
-      { keys: ['door', 'doorway', 'entrance'], codes: ['1f6aa'] },
-      { keys: ['window', 'curtain', 'curtains', 'blinds'], codes: ['1fa9f'] },
-      { keys: ['mirror'], codes: ['1fa9e'] },
-      { keys: ['lamp', 'light', 'lantern'], codes: ['1f4a1', '1f3ee'] },
-      { keys: ['fridge', 'refrigerator', 'freezer'], codes: ['1f9ca'] },
-      { keys: ['oven', 'stove', 'microwave', 'toaster'], codes: ['1f373', '1f35e'] },
-      { keys: ['toilet', 'restroom', 'bathroom'], codes: ['1f6bd'] },
-      { keys: ['shower'], codes: ['1f6bf'] },
-      { keys: ['bathtub', 'bath', 'tub'], codes: ['1f6c1', '1f6c0'] },
-      { keys: ['sink', 'faucet', 'tap'], codes: ['1f6b0'] },
-      { keys: ['plunger'], codes: ['1faa0'] },
-      { keys: ['toilet paper', 'tissue', 'paper towel'], codes: ['1f9fb'] },
-      { keys: ['soap', 'bar of soap'], codes: ['1f9fc'] },
-      { keys: ['sponge'], codes: ['1f9fd'] },
-      { keys: ['bubbles', 'foam', 'suds'], codes: ['1fae7'] },
-      { keys: ['toothbrush'], codes: ['1faa5'] },
-      { keys: ['razor', 'shaver'], codes: ['1fa92'] },
-      { keys: ['lotion', 'shampoo', 'sunscreen', 'cream'], codes: ['1f9f4'] },
-      { keys: ['broom'], codes: ['1f9f9'] },
-      { keys: ['bucket', 'pail'], codes: ['1faa3'] },
-      { keys: ['basket', 'laundry'], codes: ['1f9fa'] },
-      { keys: ['trash', 'trash can', 'garbage', 'bin', 'wastebasket'], codes: ['1f5d1'] },
-      { keys: ['box', 'package', 'parcel', 'cardboard'], codes: ['1f4e6'] },
-      { keys: ['mailbox', 'postbox'], codes: ['1f4eb', '1f4ee'] },
-      { keys: ['bell', 'doorbell'], codes: ['1f514', '1f6ce'] },
-      { keys: ['fire extinguisher', 'extinguisher'], codes: ['1f9ef'] },
-      { keys: ['shopping cart', 'cart', 'trolley'], codes: ['1f6d2'] },
-      { keys: ['shopping bag', 'tote'], codes: ['1f6cd'] },
+      // Crisp dark ink pixel outline around opaque sprite pixels
+      const alphaCopy = new Uint8Array(gridSize * gridSize);
+      for (let p = 0; p < alphaCopy.length; p++) {
+        alphaCopy[p] = data[p * 4 + 3] > 0 ? 1 : 0;
+      }
+      for (let y = 1; y < gridSize - 1; y++) {
+        for (let x = 1; x < gridSize - 1; x++) {
+          const idx = y * gridSize + x;
+          if (alphaCopy[idx] === 0) {
+            const hasNeighbor =
+              alphaCopy[idx - 1] === 1 ||
+              alphaCopy[idx + 1] === 1 ||
+              alphaCopy[idx - gridSize] === 1 ||
+              alphaCopy[idx + gridSize] === 1;
+            if (hasNeighbor) {
+              const p4 = idx * 4;
+              data[p4] = 24;
+              data[p4 + 1] = 24;
+              data[p4 + 2] = 27;
+              data[p4 + 3] = 255;
+            }
+          }
+        }
+      }
 
-      // Tools, Hardware & Construction
-      { keys: ['hammer'], codes: ['1f528'] },
-      { keys: ['wrench', 'spanner'], codes: ['1f527'] },
-      { keys: ['screwdriver'], codes: ['1fa9b'] },
-      { keys: ['saw', 'carpentry saw', 'handsaw'], codes: ['1fa9a'] },
-      { keys: ['axe', 'hatchet'], codes: ['1fa93'] },
-      { keys: ['pickaxe', 'pick'], codes: ['26cf'] },
-      { keys: ['shovel', 'spade'], codes: ['1fa9e', '26cf'] },
-      { keys: ['nut and bolt', 'bolt', 'screw', 'nail'], codes: ['1f529'] },
-      { keys: ['gear', 'cog', 'cogwheel'], codes: ['2699'] },
-      { keys: ['chain', 'chains', 'link'], codes: ['26d3', '1f517'] },
-      { keys: ['hook'], codes: ['1fa9d'] },
-      { keys: ['ladder'], codes: ['1fa9c'] },
-      { keys: ['brick', 'bricks', 'wall'], codes: ['1f9f1'] },
-      { keys: ['magnet'], codes: ['1f9f2'] },
-      { keys: ['toolbox', 'tools'], codes: ['1f9f0'] },
-      { keys: ['clamp', 'vise'], codes: ['1f5dc'] },
-      { keys: ['scale', 'balance'], codes: ['2696'] },
-      { keys: ['mousetrap', 'trap'], codes: ['1faa4'] },
-      { keys: ['broomstick'], codes: ['1f9f9'] },
-      { keys: ['rope', 'knot'], codes: ['1faa2'] },
-      { keys: ['thread', 'spool', 'yarn', 'wool'], codes: ['1f9f5', '1f9f6'] },
-      { keys: ['needle', 'sewing', 'pin', 'safety pin'], codes: ['1faa1', '1f9f7'] },
+      sCtx.putImageData(imgData, 0, 0);
 
-      // Office, School & Stationery
-      { keys: ['book', 'books', 'notebook', 'textbook', 'journal', 'diary'], codes: ['1f4da', '1f4d6', '1f4d3', '1f4d4'] },
-      { keys: ['bookmark'], codes: ['1f516'] },
-      { keys: ['newspaper', 'paper', 'document', 'page', 'scroll'], codes: ['1f4f0', '1f4c4', '1f4dc'] },
-      { keys: ['pencil'], codes: ['270f'] },
-      { keys: ['pen', 'fountain pen', 'ballpoint'], codes: ['1f58a', '1f58b'] },
-      { keys: ['crayon'], codes: ['1f58d'] },
-      { keys: ['paintbrush', 'brush', 'paint', 'palette', 'art'], codes: ['1f58c', '1f3a8'] },
-      { keys: ['ruler', 'triangle ruler'], codes: ['1f4cf', '1f4d0'] },
-      { keys: ['scissors'], codes: ['2702'] },
-      { keys: ['paperclip', 'clip'], codes: ['1f4ce', '1f587'] },
-      { keys: ['pushpin', 'thumbtack', 'tack'], codes: ['1f4cc', '1f4cd'] },
-      { keys: ['folder', 'file', 'briefcase'], codes: ['1f4c1', '1f4c2', '1f4bc'] },
-      { keys: ['calendar', 'date'], codes: ['1f4c5', '1f4c6'] },
-      { keys: ['clipboard', 'chart', 'graph'], codes: ['1f4cb', '1f4ca', '1f4c8'] },
-      { keys: ['abacus', 'calculator'], codes: ['1f9ee'] },
-      { keys: ['magnifying glass', 'magnifier', 'search', 'zoom'], codes: ['1f50d', '1f50e'] },
-      { keys: ['mail', 'letter', 'envelope', 'email'], codes: ['2709', '1f48c', '1f4e7'] },
-      { keys: ['stamp', 'postage'], codes: ['1f4ee'] },
-      { keys: ['globe', 'world map', 'map'], codes: ['1f30d', '1f5fa'] },
-      { keys: ['graduation cap', 'diploma', 'degree'], codes: ['1f393'] },
-      { keys: ['backpack', 'schoolbag', 'bag', 'satchel'], codes: ['1f392'] },
-
-      // Electronics, Tech & Gadgets
-      { keys: ['phone', 'smartphone', 'iphone', 'mobile', 'cellphone'], codes: ['1f4f1'] },
-      { keys: ['telephone', 'landline'], codes: ['260e', '1f4de'] },
-      { keys: ['laptop', 'macbook', 'notebook computer'], codes: ['1f4bb'] },
-      { keys: ['computer', 'desktop', 'pc', 'monitor', 'screen'], codes: ['1f5a5'] },
-      { keys: ['keyboard'], codes: ['2328'] },
-      { keys: ['computer mouse', 'trackpad'], codes: ['1f5b1'] },
-      { keys: ['printer'], codes: ['1f5a8'] },
-      { keys: ['hard drive', 'floppy', 'disk', 'cd', 'dvd'], codes: ['1f4be', '1f4bf', '1f4c0'] },
-      { keys: ['battery'], codes: ['1f50b', '1faab'] },
-      { keys: ['plug', 'electric plug', 'charger', 'cable'], codes: ['1f50c'] },
-      { keys: ['lightbulb', 'bulb', 'idea'], codes: ['1f4a1'] },
-      { keys: ['flashlight', 'torch'], codes: ['1f526'] },
-      { keys: ['candle'], codes: ['1f56f'] },
-      { keys: ['camera', 'dslr', 'polaroid'], codes: ['1f4f7', '1f4f8'] },
-      { keys: ['video camera', 'camcorder', 'projector'], codes: ['1f4f9', '1f3a5', '1f4fd'] },
-      { keys: ['tv', 'television'], codes: ['1f4fa'] },
-      { keys: ['radio', 'walkie talkie'], codes: ['1f4fb'] },
-      { keys: ['speaker', 'loudspeaker', 'megaphone'], codes: ['1f50a', '1f4e2', '1f4e3'] },
-      { keys: ['headphones', 'headset', 'earphones'], codes: ['1f3a7'] },
-      { keys: ['microphone', 'mic'], codes: ['1f3a4', '1f399'] },
-      { keys: ['game', 'controller', 'joystick', 'gaming', 'arcade', 'console'], codes: ['1f3ae', '1f579'] },
-      { keys: ['satellite dish', 'antenna', 'radar'], codes: ['1f4e1'] },
-
-      // Clothing, Footwear, Jewelry & Beauty
-      { keys: ['sunglasses', 'shades'], codes: ['1f576'] },
-      { keys: ['glasses', 'eyeglasses', 'spectacles', 'goggles'], codes: ['1f453', '1f97d'] },
-      { keys: ['hat', 'cap', 'tophat', 'beanie', 'sunhat'], codes: ['1f3a9', '1f9e2', '1f452'] },
-      { keys: ['helmet', 'hard hat'], codes: ['26d1', '1fa96'] },
-      { keys: ['crown', 'tiara'], codes: ['1f451'] },
-      { keys: ['scarf'], codes: ['1f9e3'] },
-      { keys: ['gloves', 'mittens'], codes: ['1f9e4'] },
-      { keys: ['coat', 'jacket', 'vest'], codes: ['1f9e5', '1f9ba'] },
-      { keys: ['shirt', 'tshirt', 't-shirt', 'hoodie', 'sweater'], codes: ['1f455'] },
-      { keys: ['tie', 'necktie', 'suit'], codes: ['1f454'] },
-      { keys: ['dress', 'gown', 'kimono', 'sari'], codes: ['1f457', '1f458', '1f97b'] },
-      { keys: ['jeans', 'pants', 'trousers', 'shorts'], codes: ['1f456', '1fa73'] },
-      { keys: ['skirt'], codes: ['1fa71'] },
-      { keys: ['swimsuit', 'bikini'], codes: ['1fa72', '1f459'] },
-      { keys: ['socks', 'sock'], codes: ['1f9e6'] },
-      { keys: ['shoe', 'sneaker', 'running shoe', 'trainer'], codes: ['1f45f'] },
-      { keys: ['boot', 'hiking boot'], codes: ['1f97e', '1f462'] },
-      { keys: ['heel', 'high heel', 'sandal', 'flip flop', 'slipper'], codes: ['1f460', '1f461', '1fa74', '1fa70'] },
-      // Jewelry, Cosmetics & Beauty
-      { keys: ['ring', 'engagement ring'], codes: ['1f48d'] },
-      { keys: ['necklace', 'beads', 'pearl'], codes: ['1f4ff'] },
-      { keys: ['diamond', 'gem', 'jewel', 'ruby', 'emerald'], codes: ['1f48e'] },
-      { keys: ['lipstick', 'makeup'], codes: ['1f484'] },
-      { keys: ['comb', 'hairbrush', 'haircut'], codes: ['1f487'] },
-      { keys: ['nail polish', 'manicure'], codes: ['1f485'] },
-      { keys: ['umbrella', 'parasol'], codes: ['2602', '2614'] },
-      { keys: ['luggage', 'suitcase', 'baggage'], codes: ['1f9f3'] },
-
-      // Medical, Science & Lab
-      { keys: ['pill', 'capsule', 'medicine', 'vitamin'], codes: ['1f48a'] },
-      { keys: ['syringe', 'needle', 'vaccine', 'injection'], codes: ['1f489'] },
-      { keys: ['bandage', 'bandaid', 'plaster'], codes: ['1fa79'] },
-      { keys: ['stethoscope', 'doctor'], codes: ['1fa7a'] },
-      { keys: ['xray', 'x-ray'], codes: ['1fa7b'] },
-      { keys: ['crutch', 'wheelchair'], codes: ['1fa7c', '1f9bd'] },
-      { keys: ['microscope'], codes: ['1f52c'] },
-      { keys: ['telescope'], codes: ['1f52d'] },
-      { keys: ['potion', 'test tube', 'beaker', 'science', 'chemistry'], codes: ['1f9ea', '2697'] },
-      { keys: ['petri dish', 'bacteria', 'microbe', 'germ', 'virus'], codes: ['1f9eb', '1f9a0'] },
-      { keys: ['dna', 'genetics'], codes: ['1f9ec'] },
-
-      // Music, Arts & Entertainment
-      { keys: ['guitar', 'electric guitar'], codes: ['1f3b8'] },
-      { keys: ['violin', 'cello'], codes: ['1f3bb'] },
-      { keys: ['banjo'], codes: ['1fa95'] },
-      { keys: ['trumpet', 'horn'], codes: ['1f3ba'] },
-      { keys: ['saxophone', 'sax'], codes: ['1f3b7'] },
-      { keys: ['accordion'], codes: ['1fa97'] },
-      { keys: ['flute'], codes: ['1fa88'] },
-      { keys: ['piano', 'keyboard instrument'], codes: ['1f3b9'] },
-      { keys: ['drum', 'drums', 'maracas'], codes: ['1f941', '1fa87'] },
-      { keys: ['music', 'note', 'melody', 'song'], codes: ['1f3b5', '1f3b6'] },
-      { keys: ['movie', 'film', 'clapperboard', 'cinema'], codes: ['1f3ac', '1f39e'] },
-      { keys: ['ticket', 'tickets', 'pass'], codes: ['1f3ab', '1f39f'] },
-      { keys: ['mask', 'theater', 'drama'], codes: ['1f3ad'] },
-      { keys: ['circus', 'tent'], codes: ['1f3aa', '26fa'] },
-      { keys: ['dice', 'die'], codes: ['1f3b2'] },
-      { keys: ['puzzle', 'jigsaw'], codes: ['1f9e9'] },
-      { keys: ['chess', 'pawn', 'knight'], codes: ['265f'] },
-      { keys: ['cards', 'playing card', 'joker', 'ace'], codes: ['1f0cf', '1f004'] },
-      { keys: ['target', 'bullseye', 'dart', 'dartboard'], codes: ['1f3af'] },
-      { keys: ['yo-yo', 'yoyo'], codes: ['1fa80'] },
-      { keys: ['kite'], codes: ['1fa81'] },
-      { keys: ['pinata'], codes: ['1fa85'] },
-      { keys: ['nesting doll', 'matryoshka'], codes: ['1fa86'] },
-      { keys: ['magic wand', 'wand'], codes: ['1fa84'] },
-      { keys: ['crystal ball'], codes: ['1f52e'] },
-      { keys: ['balloon'], codes: ['1f388'] },
-      { keys: ['gift', 'present', 'surprise'], codes: ['1f381'] },
-      { keys: ['ribbon', 'bow'], codes: ['1f380'] },
-      { keys: ['confetti', 'party popper'], codes: ['1f389', '1f38a'] },
-      { keys: ['fireworks', 'sparkler'], codes: ['1f386', '1f387'] },
-
-      // Sports & Outdoor Recreation
-      { keys: ['soccer', 'soccer ball'], codes: ['26bd'] },
-      { keys: ['football', 'american football'], codes: ['1f3c8'] },
-      { keys: ['basketball'], codes: ['1f3c0'] },
-      { keys: ['baseball'], codes: ['26be'] },
-      { keys: ['softball'], codes: ['1f94e'] },
-      { keys: ['tennis', 'racket'], codes: ['1f3be'] },
-      { keys: ['volleyball'], codes: ['1f3d0'] },
-      { keys: ['rugby'], codes: ['1f3c9'] },
-      { keys: ['bowling'], codes: ['1f3b3'] },
-      { keys: ['cricket bat', 'cricket ball'], codes: ['1f3cf'] },
-      { keys: ['hockey', 'ice hockey', 'field hockey'], codes: ['1f3d2', '1f3d1'] },
-      { keys: ['lacrosse'], codes: ['1f94d'] },
-      { keys: ['ping pong', 'table tennis'], codes: ['1f3d3'] },
-      { keys: ['badminton', 'shuttlecock'], codes: ['1f3f8'] },
-      { keys: ['boxing', 'boxing glove'], codes: ['1f94a'] },
-      { keys: ['karate', 'martial arts', 'judo'], codes: ['1f94b'] },
-      { keys: ['golf', 'golf ball'], codes: ['26f3'] },
-      { keys: ['ice skate', 'skating'], codes: ['26f8'] },
-      { keys: ['fishing', 'fishing pole', 'rod'], codes: ['1f3a3'] },
-      { keys: ['diving', 'snorkel', 'scuba'], codes: ['1f93f'] },
-      { keys: ['surfing', 'surfboard'], codes: ['1f3c4'] },
-      { keys: ['ski', 'skiing', 'sled', 'snowboard'], codes: ['1f3bf', '1f6f7', '1f3c2'] },
-      { keys: ['pool', 'billiards', '8 ball'], codes: ['1f3b1'] },
-      { keys: ['trophy', 'cup award'], codes: ['1f3c6'] },
-      { keys: ['medal', 'gold medal'], codes: ['1f3c5', '1f947'] },
-
-      // Weapons, Medieval & Security
-      { keys: ['sword', 'swords', 'dagger', 'blade'], codes: ['2694', '1f5e1'] },
-      { keys: ['shield'], codes: ['1f6e1'] },
-      { keys: ['bow', 'arrow', 'archery'], codes: ['1f3f9'] },
-      { keys: ['boomerang'], codes: ['1fa83'] },
-      { keys: ['bomb', 'dynamite', 'explosive'], codes: ['1f4a3', '1f9e8'] },
-      { keys: ['water gun', 'squirt gun', 'toy gun'], codes: ['1f52b'] },
-      { keys: ['key', 'old key'], codes: ['1f511', '1f5dd'] },
-      { keys: ['lock', 'padlock', 'locked'], codes: ['1f512', '1f513'] },
-
-      // Sky, Space, Weather & Elements
-      { keys: ['sun', 'sunny', 'sunshine'], codes: ['2600', '1f31e', '1f31d'] },
-      { keys: ['moon', 'crescent'], codes: ['1f319', '1f31d', '1f31b'] },
-      { keys: ['star', 'stars', 'sparkle'], codes: ['2b50', '1f31f', '2728'] },
-      { keys: ['rainbow'], codes: ['1f308'] },
-      { keys: ['cloud', 'clouds'], codes: ['2601', '26c5'] },
-      { keys: ['rain', 'rainy'], codes: ['1f327', '2614'] },
-      { keys: ['tornado', 'hurricane', 'cyclone'], codes: ['1f32a', '1f300'] },
-      { keys: ['fire', 'flame', 'bonfire', 'campfire'], codes: ['1f525'] },
-      { keys: ['water', 'droplet', 'drop'], codes: ['1f4a7'] },
-      { keys: ['lightning', 'thunder', 'bolt', 'electricity'], codes: ['26a1'] },
-      { keys: ['snowman'], codes: ['2603', '26c4'] },
-      { keys: ['snowflake', 'snow'], codes: ['2744'] },
-      { keys: ['earth', 'world'], codes: ['1f30d', '1f30e', '1f30f'] },
-      { keys: ['planet', 'saturn'], codes: ['1fa90'] },
-      { keys: ['comet', 'meteor', 'asteroid'], codes: ['2604'] },
-
-      // Buildings, Landmarks & Places
-      { keys: ['house', 'home', 'cottage', 'cabin'], codes: ['1f3e0', '1f3e1', '1f6d6'] },
-      { keys: ['castle', 'palace', 'fortress'], codes: ['1f3f0', '1f3ef'] },
-      { keys: ['building', 'office', 'skyscraper', 'hotel'], codes: ['1f3e2', '1f3e8'] },
-      { keys: ['school', 'university'], codes: ['1f3eb'] },
-      { keys: ['hospital', 'clinic'], codes: ['1f3e5'] },
-      { keys: ['bank'], codes: ['1f3e6'] },
-      { keys: ['store', 'shop', 'supermarket'], codes: ['1f3ea', '1f3ec'] },
-      { keys: ['factory'], codes: ['1f3ed'] },
-      { keys: ['church', 'mosque', 'temple', 'synagogue'], codes: ['26ea', '1f54c', '1f6d5', '1f54d'] },
-      { keys: ['fountain'], codes: ['26f2'] },
-      { keys: ['statue', 'liberty', 'moai'], codes: ['1f5fd', '1f5ff'] },
-      { keys: ['bridge'], codes: ['1f309'] },
-      { keys: ['ferris wheel'], codes: ['1f3a1'] },
-      { keys: ['roller coaster'], codes: ['1f3a2'] },
-      { keys: ['carousel'], codes: ['1f3a0'] },
-
-      // Money, Time & Signs
-      { keys: ['money', 'dollar', 'cash', 'coin', 'gold', 'banknote'], codes: ['1f4b0', '1f4b5', '1fa99'] },
-      { keys: ['credit card', 'card'], codes: ['1f4b3'] },
-      { keys: ['clock', 'watch', 'alarm', 'timer'], codes: ['23f0', '231a', '1f570', '23f1'] },
-      { keys: ['hourglass'], codes: ['231b', '23f3'] },
-      { keys: ['compass'], codes: ['1f9ed'] },
-      { keys: ['flag', 'banner'], codes: ['1f6a9', '1f3c1', '1f3f3'] },
-      { keys: ['sign', 'stop sign', 'warning'], codes: ['1f6d1', '26a0'] },
-
-      // Colored Hearts & Fantasy/Spooky Characters
-      { keys: ['pink heart'], codes: ['1fa77', '1f496', '1f497', '1f495'] },
-      { keys: ['red heart'], codes: ['2764'] },
-      { keys: ['orange heart'], codes: ['1f9e1'] },
-      { keys: ['yellow heart'], codes: ['1f49b'] },
-      { keys: ['green heart'], codes: ['1f49a'] },
-      { keys: ['blue heart', 'light blue heart'], codes: ['1f499', '1fa75'] },
-      { keys: ['purple heart'], codes: ['1f49c'] },
-      { keys: ['black heart'], codes: ['1f5a4'] },
-      { keys: ['white heart'], codes: ['1f90d'] },
-      { keys: ['brown heart'], codes: ['1f90e'] },
-      { keys: ['grey heart', 'gray heart'], codes: ['1fa76'] },
-      { keys: ['broken heart', 'heartbreak'], codes: ['1f494'] },
-      { keys: ['sparkling heart'], codes: ['1f496'] },
-      { keys: ['heart', 'love'], codes: ['2764', '1fa77', '1f496', '1f49c', '1f499', '1f49b', '1f49a'] },
-      { keys: ['ghost', 'spooky'], codes: ['1f47b'] },
-      { keys: ['wizard', 'mage', 'witch'], codes: ['1f9d9', '1f9d9-200d-2640-fe0f'] },
-      { keys: ['fairy'], codes: ['1f9da'] },
-      { keys: ['mermaid', 'merman'], codes: ['1f9dc'] },
-      { keys: ['elf'], codes: ['1f9dd'] },
-      { keys: ['genie'], codes: ['1f9de'] },
-      { keys: ['vampire', 'dracula'], codes: ['1f9db'] },
-      { keys: ['superhero', 'hero'], codes: ['1f9b8'] },
-      { keys: ['angel'], codes: ['1f47c'] },
-      { keys: ['devil', 'imp'], codes: ['1f608', '1f47f'] },
-      { keys: ['alien', 'extraterrestrial'], codes: ['1f47d', '1f47e'] },
-      { keys: ['robot', 'bot', 'android', 'cyborg'], codes: ['1f916'] },
-      { keys: ['skull', 'skeleton'], codes: ['1f480', '2620'] },
-      { keys: ['zombie'], codes: ['1f9df'] },
-      { keys: ['ninja'], codes: ['1f977'] },
-      { keys: ['astronaut'], codes: ['1f9d1-200d-1f680'] },
-      { keys: ['santa'], codes: ['1f385'] },
-      { keys: ['clown'], codes: ['1f921'] },
-      { keys: ['cowboy'], codes: ['1f920'] },
-      { keys: ['detective'], codes: ['1f575'] },
-      { keys: ['pirate'], codes: ['1f3f4-200d-2620-fe0f'] },
-
-      // Explicit Expressions / Faces
-      { keys: ['smile', 'smiley', 'grin'], codes: ['1f604', '1f603', '1f601', '1f60a'] },
-      { keys: ['laugh', 'lol'], codes: ['1f602', '1f923'] },
-      { keys: ['cry', 'crying', 'sad', 'tears'], codes: ['1f622', '1f62d'] },
-      { keys: ['angry', 'mad'], codes: ['1f621', '1f620'] },
-      { keys: ['sleep', 'sleepy', 'zzz'], codes: ['1f634'] },
-      { keys: ['wink'], codes: ['1f609'] },
-      { keys: ['kiss'], codes: ['1f618'] },
-      { keys: ['party', 'celebrate'], codes: ['1f973', '1f389'] },
-      { keys: ['poop'], codes: ['1f4a9'] },
-      { keys: ['100'], codes: ['1f4af'] }
-    ];
+      const ctx = targetCanvas.getContext('2d');
+      ctx.clearRect(0, 0, outSize, outSize);
+      if (!transparentBg) {
+        ctx.fillStyle = '#FFFDF5';
+        ctx.fillRect(0, 0, outSize, outSize);
+      }
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(small, 0, 0, outSize, outSize);
+    }
 
     /**
-     * Downloads the crisp 512x512 PNG file (with mobile Blob + Web Share fallback)
+     * Converts a canvas into a PNG Blob synchronously (keeps mobile tap gestures alive!)
      */
-    function canvasToPngBlob(canvas) {
-      return new Promise((resolve) => {
-        if (canvas.toBlob) {
-          canvas.toBlob((blob) => resolve(blob), 'image/png');
-        } else {
-          const dataUrl = canvas.toDataURL('image/png');
-          const byteString = atob(dataUrl.split(',')[1]);
-          const ab = new ArrayBuffer(byteString.length);
-          const ia = new Uint8Array(ab);
-          for (let i = 0; i < byteString.length; i++) {
-            ia[i] = byteString.charCodeAt(i);
-          }
-          resolve(new Blob([ab], { type: 'image/png' }));
-        }
-      });
+    function canvasToPngBlobSync(canvas) {
+      const dataUrl = canvas.toDataURL('image/png');
+      const parts = dataUrl.split(',');
+      const byteString = atob(parts[1]);
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+      }
+      return new Blob([ab], { type: 'image/png' });
     }
 
-    function openMobileExportModal(dataUrl, instructionText) {
-      const modal = document.getElementById('mobile-export-modal');
-      const img = document.getElementById('mobile-export-img');
-      const label = document.getElementById('mobile-export-instruction');
-      if (!modal || !img) return;
-      img.src = dataUrl;
-      if (label && instructionText) label.textContent = instructionText;
-      modal.classList.remove('hidden');
-    }
-
-    function closeMobileExportModal(event) {
-      if (event && event.target !== event.currentTarget) return;
-      const modal = document.getElementById('mobile-export-modal');
-      if (modal) modal.classList.add('hidden');
-    }
-
-    async function downloadEmojiPng() {
+    /**
+     * Mobile & Desktop PNG Save: keeps synchronous user-gesture token alive for iOS/Android
+     */
+    function downloadEmojiPng() {
       const canvas = document.getElementById('emoji-canvas');
       if (!canvas) return;
 
-      const slug = (state.currentPrompt || 'pixiemoji')
+      const slug = (state.currentPrompt || 'emoji')
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '');
-      const filename = `pixiemoji-${slug || 'emoji'}.png`;
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+        .replace(/^-|-$/g, '') || 'emoji';
+      const filename = `pixiemoji-${slug}-v${state.variationIndex + 1}.png`;
+      const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
       try {
-        const blob = await canvasToPngBlob(canvas);
-        if (!blob) throw new Error('Blob failed');
+        const blob = canvasToPngBlobSync(canvas);
+        const file = new File([blob], filename, { type: 'image/png' });
 
-        // On mobile browsers where <a download> can be ignored (especially iOS Safari / in-app browsers),
-        // offer native Share Sheet ("Save Image") if available, or trigger Blob download + touch-hold fallback
-        if (isMobile && navigator.share && navigator.canShare) {
-          try {
-            const file = new File([blob], filename, { type: 'image/png' });
-            if (navigator.canShare({ files: [file] })) {
-              await navigator.share({
-                files: [file],
-                title: 'pixieMoji Pixel Emoji'
-              });
-              showToast('💾 Saved / shared pixel emoji!', 'success');
-              return;
+        // On mobile browsers, Web Share API opens native "Save Image" / Gallery / Files sheet
+        if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          navigator.share({
+            files: [file],
+            title: filename
+          }).then(() => {
+            showToast('💾 Saved / Shared PNG!', 'success');
+          }).catch((err) => {
+            if (err && err.name !== 'AbortError') {
+              openMobileExportModal(canvas.toDataURL('image/png'), 'Press & hold the emoji below and tap "Save to Photos" or "Download Image"!');
             }
-          } catch (shareErr) {
-            if (shareErr && shareErr.name === 'AbortError') return;
-          }
+          });
+          return;
         }
 
-        const blobUrl = URL.createObjectURL(blob);
+        // Standard download link
+        const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
+        link.href = url;
         link.download = filename;
-        link.href = blobUrl;
         link.rel = 'noopener';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
 
         if (isMobile) {
-          openMobileExportModal(canvas.toDataURL('image/png'), 'Download started! If your browser blocked it, press & hold the image below and tap "Save Image".');
+          openMobileExportModal(canvas.toDataURL('image/png'), 'Download started! If it didn’t save automatically, press & hold the image below to save it.');
         } else {
-          showToast('💾 Saved crisp 512×512 PNG!', 'success');
+          showToast(`💾 Saved ${filename}!`, 'success');
         }
       } catch (err) {
-        if (err && err.name === 'AbortError') return;
-        openMobileExportModal(canvas.toDataURL('image/png'), 'Press & hold the emoji below and tap "Save Image" to save to your phone!');
+        openMobileExportModal(canvas.toDataURL('image/png'), 'Press & hold the emoji below to Save Image!');
       }
     }
 
     /**
-     * Copies the generated pixel emoji PNG image to clipboard (supports iOS Safari, Android Chrome & Desktop)
+     * Mobile & Desktop Copy Emoji to Clipboard
      */
     async function copyEmojiToClipboard() {
       const canvas = document.getElementById('emoji-canvas');
       const btnText = document.getElementById('copy-btn-text');
       if (!canvas) return;
 
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
       try {
         if (navigator.clipboard && window.ClipboardItem) {
-          // Passing a Promise directly into ClipboardItem preserves the user-tap gesture on iOS Safari!
-          const blobPromise = canvasToPngBlob(canvas);
-          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]);
+          const blobPromise = Promise.resolve(canvasToPngBlobSync(canvas));
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': blobPromise })
+          ]);
           if (btnText) {
             btnText.textContent = '✅ Copied!';
             setTimeout(() => { btnText.textContent = '📋 Copy Emoji'; }, 2000);
           }
-          showToast('📋 Copied pixel emoji image to clipboard!', 'success');
+          showToast('📋 Pixel emoji copied! Ready to paste.', 'success');
           return;
         }
-        throw new Error('ClipboardItem unsupported');
       } catch (err) {
-        // Mobile fallback: open native Share Sheet or Touch-and-Hold Copy modal instead of copying raw base64 text
-        if (isMobile) {
-          try {
-            const blob = await canvasToPngBlob(canvas);
-            const file = new File([blob], 'pixiemoji.png', { type: 'image/png' });
-            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-              await navigator.share({
-                files: [file],
-                title: 'pixieMoji Pixel Emoji'
-              });
-              return;
-            }
-          } catch (shareErr) {
-            if (shareErr && shareErr.name === 'AbortError') return;
-          }
-          openMobileExportModal(canvas.toDataURL('image/png'), 'Press & hold the emoji below and tap "Copy" to copy the image!');
-          return;
-        }
-
-        try {
-          const textArea = document.createElement('textarea');
-          textArea.value = canvas.toDataURL('image/png');
-          textArea.style.position = 'fixed';
-          textArea.style.opacity = '0';
-          document.body.appendChild(textArea);
-          textArea.select();
-          document.execCommand('copy');
-          document.body.removeChild(textArea);
-
-          if (btnText) {
-            btnText.textContent = '✅ Copied!';
-            setTimeout(() => { btnText.textContent = '📋 Copy Emoji'; }, 2000);
-          }
-          showToast('📋 Copied pixel emoji data URL to clipboard!', 'success');
-        } catch (fallbackErr) {
-          showToast('⚠️ Could not copy directly — try "Save as PNG"!', 'warning');
-        }
+        // Fallback below for restricted mobile browsers
       }
+
+      openMobileExportModal(canvas.toDataURL('image/png'), 'Press & hold the emoji below and tap "Copy"!');
+    }
+
+    function openMobileExportModal(dataUrl, instructionText) {
+      const modal = document.getElementById('mobile-export-modal');
+      const img = document.getElementById('mobile-export-img');
+      const inst = document.getElementById('mobile-export-instruction');
+      if (img) img.src = dataUrl;
+      if (inst && instructionText) inst.textContent = instructionText;
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeMobileExportModal(event) {
+      if (event && event.target && event.target.id !== 'mobile-export-modal') return;
+      const modal = document.getElementById('mobile-export-modal');
+      if (modal) modal.classList.add('hidden');
     }
 
     // =========================================================================
-    // 6. RECENT CREATIONS, LOADING ANIMATIONS & TOAST NOTIFICATIONS
+    // 6. RECENT CREATIONS, LOADING ANIMATION & TOAST HELPERS
     // =========================================================================
-    function addToRecentCreations(prompt, dataUrl, rawImg) {
+    function addToRecentCreations(prompt, dataUrl, rawSource) {
       state.recentCreations.unshift({
         prompt,
         dataUrl,
-        rawImg,
-        timestamp: Date.now()
+        rawSource,
+        variation: state.variationIndex
       });
-
       if (state.recentCreations.length > 12) {
         state.recentCreations.pop();
       }
 
-      renderRecentCreations();
-    }
-
-    function renderRecentCreations() {
       const section = document.getElementById('recent-section');
+      const countEl = document.getElementById('recent-count');
       const grid = document.getElementById('recent-grid');
-      const count = document.getElementById('recent-count');
-
-      if (!section || !grid || state.recentCreations.length === 0) return;
+      if (!section || !grid) return;
 
       section.classList.remove('hidden');
-      count.textContent = `${state.recentCreations.length} created`;
-      grid.innerHTML = '';
+      if (countEl) countEl.textContent = `${state.recentCreations.length} created`;
 
-      state.recentCreations.forEach((item, index) => {
+      grid.innerHTML = '';
+      state.recentCreations.forEach((item) => {
         const card = document.createElement('button');
         card.type = 'button';
-        card.className = 'btn-brutal-sm bg-white border-3 border-inkBlack rounded-xl p-2.5 shadow-brutalSm flex flex-col items-center text-center cursor-pointer';
-        card.onclick = () => restoreRecentCreation(index);
+        card.className = 'btn-brutal-sm bg-white border-3 border-inkBlack rounded-2xl p-2.5 shadow-brutalSm flex flex-col items-center text-center cursor-pointer';
+        card.onclick = () => {
+          state.currentPrompt = item.prompt;
+          state.variationIndex = item.variation;
+          state.rawImageElement = item.rawSource;
+          const titleEl = document.getElementById('stage-prompt-title');
+          const headlineEl = document.getElementById('result-headline');
+          if (titleEl) titleEl.textContent = `"${item.prompt}"`;
+          if (headlineEl) headlineEl.textContent = capitalizeTitle(item.prompt);
+          renderQuantizedEmoji();
+        };
 
-        const imgBox = document.createElement('div');
-        imgBox.className = 'w-full aspect-square checkerboard border-2 border-inkBlack rounded-lg p-1.5 mb-1.5 flex items-center justify-center';
-
+        const box = document.createElement('div');
+        box.className = 'w-full aspect-square checkerboard border-2 border-inkBlack rounded-xl p-1.5 mb-1.5 flex items-center justify-center';
         const img = document.createElement('img');
         img.src = item.dataUrl;
         img.alt = item.prompt;
         img.className = 'w-full h-full object-contain pixelated';
-        imgBox.appendChild(img);
+        box.appendChild(img);
 
-        const label = document.createElement('span');
-        label.className = 'font-pixel text-[11px] font-bold text-inkBlack truncate w-full';
-        label.textContent = item.prompt;
+        const caption = document.createElement('span');
+        caption.className = 'font-pixel text-[11px] font-bold text-inkBlack truncate w-full';
+        caption.textContent = item.prompt;
 
-        card.appendChild(imgBox);
-        card.appendChild(label);
+        card.appendChild(box);
+        card.appendChild(caption);
         grid.appendChild(card);
       });
     }
 
-    function restoreRecentCreation(index) {
-      const item = state.recentCreations[index];
-      if (!item) return;
-
-      state.currentPrompt = item.prompt;
-      state.rawImageElement = item.rawImg;
-
-      document.getElementById('prompt-input').value = item.prompt;
-      document.getElementById('clear-input-btn').classList.remove('hidden');
-      document.getElementById('stage-prompt-title').textContent = `"${item.prompt}"`;
-      document.getElementById('result-headline').textContent = capitalizeTitle(item.prompt);
-
-      const stage = document.getElementById('result-stage');
-      stage.classList.remove('hidden');
-      document.getElementById('loading-panel').classList.add('hidden');
-      document.getElementById('loaded-panel').classList.remove('hidden');
-
-      renderQuantizedEmoji();
-      stage.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-
     function startLoadingAnimations() {
       stopLoadingAnimations(false);
-
       const statusEl = document.getElementById('loading-status');
       const barEl = document.getElementById('loading-progress-bar');
       let msgIdx = 0;
-      let progress = 15;
-
-      if (statusEl) statusEl.textContent = LOADING_MESSAGES[0];
+      let progress = 18;
       if (barEl) barEl.style.width = `${progress}%`;
 
       state.loadingTimer = setInterval(() => {
         msgIdx = (msgIdx + 1) % LOADING_MESSAGES.length;
         if (statusEl) statusEl.textContent = LOADING_MESSAGES[msgIdx];
-      }, 1400);
+      }, 650);
 
       state.progressTimer = setInterval(() => {
-        if (progress < 90) {
-          progress += Math.max(2, Math.floor((92 - progress) * 0.18));
-          if (barEl) barEl.style.width = `${Math.min(92, progress)}%`;
-        }
-      }, 350);
+        progress = Math.min(92, progress + 14);
+        if (barEl) barEl.style.width = `${progress}%`;
+      }, 220);
     }
 
-    function stopLoadingAnimations(completed) {
+    function stopLoadingAnimations(complete = true) {
       if (state.loadingTimer) {
         clearInterval(state.loadingTimer);
         state.loadingTimer = null;
@@ -1786,60 +1431,52 @@
         state.progressTimer = null;
       }
       const barEl = document.getElementById('loading-progress-bar');
-      if (barEl && completed) {
-        barEl.style.width = '100%';
-      }
-    }
-
-    function capitalizeTitle(text) {
-      return text
-        .split(' ')
-        .filter(Boolean)
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(' ');
+      if (barEl && complete) barEl.style.width = '100%';
     }
 
     function showToast(message, type = 'info') {
       const container = document.getElementById('toast-container');
       if (!container) return;
 
-      const bgColors = {
-        success: 'bg-mintFresh text-inkBlack',
-        warning: 'bg-sunny text-inkBlack',
-        error: 'bg-electricPink text-white',
-        info: 'bg-white text-inkBlack'
-      };
+      const bgClass =
+        type === 'success' ? 'bg-mintFresh' :
+        type === 'warning' ? 'bg-sunny' :
+        'bg-white';
 
       const toast = document.createElement('div');
-      toast.className = `pointer-events-auto ${bgColors[type] || bgColors.info} border-4 border-inkBlack rounded-2xl px-4 py-3 font-pixel text-xs sm:text-sm font-bold shadow-brutal transition-all duration-200`;
+      toast.className = `${bgClass} text-inkBlack font-pixel text-xs sm:text-sm font-bold px-4 py-3 border-4 border-inkBlack rounded-2xl shadow-brutal transition-all duration-200 pointer-events-auto`;
       toast.textContent = message;
-
       container.appendChild(toast);
 
       setTimeout(() => {
         toast.style.opacity = '0';
         toast.style.transform = 'translateY(8px)';
         setTimeout(() => toast.remove(), 220);
-      }, 3000);
+      }, 2800);
     }
 
-    // =========================================================================
-    // 7. INITIALIZE PAGE ON LOAD
-    // =========================================================================
-    window.addEventListener('DOMContentLoaded', () => {
-      renderShowcaseGallery();
+    function capitalizeTitle(str) {
+      return str
+        .split(' ')
+        .filter(Boolean)
+        .map(w => w[0].toUpperCase() + w.slice(1))
+        .join(' ');
+    }
 
-      const promptInput = document.getElementById('prompt-input');
+    // Initialize input clear button listener and showcase gallery on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      const input = document.getElementById('prompt-input');
       const clearBtn = document.getElementById('clear-input-btn');
-      if (promptInput && clearBtn) {
-        promptInput.addEventListener('input', () => {
-          if (promptInput.value.trim().length > 0) {
+      if (input && clearBtn) {
+        input.addEventListener('input', () => {
+          if (input.value.trim().length > 0) {
             clearBtn.classList.remove('hidden');
           } else {
             clearBtn.classList.add('hidden');
           }
         });
       }
+      renderShowcaseGallery();
     });
   </script>
 </body>
