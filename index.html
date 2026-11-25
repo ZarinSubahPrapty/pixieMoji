@@ -1,0 +1,2619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pixieMoji — Turn Anything into a Pixelated Emoji!</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Silkscreen / Press Start 2P for chunky pixel headers & Plus Jakarta Sans for clean UI -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Press+Start+2P&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            pixel: ['"Silkscreen"', '"Press Start 2P"', 'monospace'],
+            pixelTitle: ['"Press Start 2P"', 'monospace'],
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+          },
+          colors: {
+            sunny: '#FFD93D',
+            electricPink: '#FF5D8F',
+            skyPop: '#38BDF8',
+            mintFresh: '#4ADE80',
+            grapePop: '#A855F7',
+            tangerine: '#FF922B',
+            creamBg: '#FFFDF5',
+            inkBlack: '#18181B',
+          },
+          boxShadow: {
+            brutal: '6px 6px 0px 0px #18181B',
+            brutalSm: '4px 4px 0px 0px #18181B',
+            brutalLg: '8px 8px 0px 0px #18181B',
+            brutalHover: '2px 2px 0px 0px #18181B',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Crisp pixelated image rendering everywhere */
+    .pixelated {
+      image-rendering: -moz-crisp-edges;
+      image-rendering: -webkit-crisp-edges;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    /* Subtle polka/grid background pattern */
+    body {
+      background-color: #FFFDF5;
+      background-image:
+        radial-gradient(#18181B 1.25px, transparent 1.25px),
+        radial-gradient(#FF5D8F 1.25px, #FFFDF5 1.25px);
+      background-size: 36px 36px;
+      background-position: 0 0, 18px 18px;
+      overflow-x: hidden;
+    }
+
+    /* Checkerboard transparency preview background */
+    .checkerboard {
+      background-color: #ffffff;
+      background-image:
+        linear-gradient(45deg, #f1f5f9 25%, transparent 25%),
+        linear-gradient(-45deg, #f1f5f9 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #f1f5f9 75%),
+        linear-gradient(-45deg, transparent 75%, #f1f5f9 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+    }
+
+    /* Neo-brutalist tactile button physics */
+    .btn-brutal {
+      transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.12s ease;
+    }
+    .btn-brutal:hover:not(:disabled) {
+      transform: translate(-2px, -2px);
+      box-shadow: 8px 8px 0px 0px #18181B;
+    }
+    .btn-brutal:active:not(:disabled) {
+      transform: translate(4px, 4px);
+      box-shadow: 2px 2px 0px 0px #18181B;
+    }
+
+    .btn-brutal-sm {
+      transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.12s ease;
+    }
+    .btn-brutal-sm:hover:not(:disabled) {
+      transform: translate(-1px, -1px);
+      box-shadow: 5px 5px 0px 0px #18181B;
+    }
+    .btn-brutal-sm:active:not(:disabled) {
+      transform: translate(3px, 3px);
+      box-shadow: 1px 1px 0px 0px #18181B;
+    }
+
+    /* Bouncing pixel loader blocks */
+    @keyframes pixelBounce {
+      0%, 100% { transform: translateY(0) scale(1); }
+      50% { transform: translateY(-16px) scale(1.08); }
+    }
+    .pixel-block-1 { animation: pixelBounce 0.7s infinite ease-in-out 0s; }
+    .pixel-block-2 { animation: pixelBounce 0.7s infinite ease-in-out 0.12s; }
+    .pixel-block-3 { animation: pixelBounce 0.7s infinite ease-in-out 0.24s; }
+    .pixel-block-4 { animation: pixelBounce 0.7s infinite ease-in-out 0.36s; }
+
+    /* Floating decorative badges */
+    @keyframes floatSlow {
+      0%, 100% { transform: translateY(0px) rotate(-3deg); }
+      50% { transform: translateY(-6px) rotate(3deg); }
+    }
+    .float-badge {
+      animation: floatSlow 3.5s ease-in-out infinite;
+    }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      height: 10px;
+      width: 10px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #FFFDF5;
+      border-top: 2px solid #18181B;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #FFD93D;
+      border: 2px solid #18181B;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body class="text-inkBlack font-sans antialiased min-h-screen flex flex-col overflow-x-hidden selection:bg-sunny selection:text-inkBlack">
+
+  <!-- Toast Notification Container (Replaces alert()) -->
+  <div id="toast-container" class="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-5 sm:bottom-5 z-50 flex flex-col items-center sm:items-end gap-2 pointer-events-none"></div>
+
+  <!-- Top Navigation Bar -->
+  <header class="w-full border-b-4 border-inkBlack bg-sunny sticky top-0 z-40">
+    <div class="max-w-6xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
+      <a href="#" onclick="resetToHome(event)" class="flex items-center gap-2 sm:gap-3 group min-w-0">
+        <div class="w-10 h-10 sm:w-11 sm:h-11 bg-electricPink border-4 border-inkBlack rounded-xl shadow-brutalSm flex items-center justify-center shrink-0 group-hover:rotate-6 transition-transform">
+          <!-- Inline Pixel Heart SVG Logo -->
+          <svg viewBox="0 0 16 16" class="w-6 h-6 sm:w-7 sm:h-7 pixelated" shape-rendering="crispEdges">
+            <rect x="2" y="3" width="4" height="2" fill="#FFF"/>
+            <rect x="10" y="3" width="4" height="2" fill="#FFF"/>
+            <rect x="1" y="5" width="14" height="3" fill="#FFF"/>
+            <rect x="2" y="8" width="12" height="2" fill="#FFF"/>
+            <rect x="4" y="10" width="8" height="2" fill="#FFF"/>
+            <rect x="6" y="12" width="4" height="2" fill="#FFF"/>
+            <rect x="7" y="14" width="2" height="1" fill="#FFF"/>
+          </svg>
+        </div>
+        <div class="min-w-0">
+          <span class="font-pixelTitle text-xs sm:text-lg tracking-tight text-inkBlack block leading-none truncate">
+            pixie<span class="text-white drop-shadow-[2px_2px_0_#18181B]">Moji</span>
+          </span>
+          <span class="font-pixel text-[10px] sm:text-xs font-bold text-inkBlack/80 block truncate">8-BIT EMOJI STUDIO</span>
+        </div>
+      </a>
+
+      <div class="flex items-center gap-2 sm:gap-3 shrink-0">
+        <button onclick="pickRandomIdea()" class="btn-brutal-sm bg-white hover:bg-skyPop/30 text-inkBlack font-pixel text-xs sm:text-sm font-bold px-3 sm:px-4 py-2.5 sm:py-2 border-4 border-inkBlack rounded-xl shadow-brutalSm flex items-center gap-1.5 sm:gap-2 cursor-pointer">
+          <span>🎲</span>
+          <span class="hidden sm:inline">Surprise Me!</span>
+          <span class="sm:hidden">Random</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-6 py-5 sm:py-10 space-y-7 sm:space-y-10">
+
+    <!-- Hero & Prompt Input Section -->
+    <section class="bg-white border-4 border-inkBlack rounded-2xl sm:rounded-3xl shadow-brutal sm:shadow-brutalLg p-4 sm:p-10 relative overflow-hidden">
+      <div class="max-w-3xl mx-auto text-center space-y-3.5 sm:space-y-4">
+        <div class="inline-flex items-center gap-1.5 sm:gap-2 bg-skyPop/30 border-2 border-inkBlack rounded-full px-3 sm:px-3.5 py-1 font-pixel text-[10px] sm:text-xs font-bold text-inkBlack max-w-full">
+          <span class="truncate">👾 TYPE ANYTHING &rarr; INSTANT PIXEL EMOJI</span>
+        </div>
+
+        <h1 class="font-pixelTitle text-base sm:text-3xl md:text-4xl leading-relaxed sm:leading-snug text-inkBlack">
+          Turn Any Idea Into a
+          <span class="inline-block bg-electricPink text-white px-2.5 sm:px-3 py-1 rounded-xl border-4 border-inkBlack shadow-brutalSm transform -rotate-1 mt-1.5 sm:mt-1">
+            Pixel Emoji!
+          </span>
+        </h1>
+
+        <p class="text-inkBlack/80 font-semibold text-sm sm:text-lg max-w-xl mx-auto">
+          Type <span class="underline decoration-sunny decoration-4 font-bold">cat</span>, <span class="underline decoration-electricPink decoration-4 font-bold">rose</span>, <span class="underline decoration-skyPop decoration-4 font-bold">space wizard</span>, or literally anything you imagine!
+        </p>
+
+        <!-- Prompt Input Form -->
+        <form id="prompt-form" onsubmit="handleGenerateSubmit(event)" class="pt-2 sm:pt-3">
+          <div class="flex flex-col sm:flex-row gap-3 items-stretch max-w-2xl mx-auto">
+            <div class="relative flex-1">
+              <input
+                id="prompt-input"
+                type="text"
+                enterkeyhint="go"
+                maxlength="80"
+                autocomplete="off"
+                placeholder="e.g., happy cat, red rose, pink heart with sunglasses..."
+                class="w-full h-14 sm:h-16 pl-4 sm:pl-5 pr-12 text-base sm:text-lg font-bold bg-creamBg border-4 border-inkBlack rounded-2xl shadow-brutalSm focus:outline-none focus:bg-sunny/20 focus:ring-0 placeholder:text-inkBlack/40 transition-colors"
+              />
+              <button
+                type="button"
+                id="clear-input-btn"
+                onclick="clearPromptInput()"
+                title="Clear text"
+                class="hidden absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg bg-inkBlack/10 hover:bg-electricPink hover:text-white font-pixel font-bold text-sm flex items-center justify-center transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <button
+              type="submit"
+              id="generate-btn"
+              class="btn-brutal h-14 sm:h-16 px-6 sm:px-7 bg-mintFresh hover:bg-[#3be376] text-inkBlack font-pixel text-base sm:text-lg font-bold border-4 border-inkBlack rounded-2xl shadow-brutal flex items-center justify-center gap-2.5 cursor-pointer shrink-0"
+            >
+              <span>⚡ PIXELATE!</span>
+            </button>
+          </div>
+        </form>
+
+        <!-- Quick Idea Chips -->
+        <div class="pt-1.5 sm:pt-2 flex flex-wrap items-center justify-center gap-2 text-xs sm:text-sm font-bold">
+          <span class="font-pixel text-inkBlack/60 mr-0.5 sm:mr-1">TRY:</span>
+          <button type="button" onclick="quickGenerate('cat')" class="px-3 py-1.5 sm:py-1 bg-sunny/60 hover:bg-sunny border-2 border-inkBlack rounded-full transition-transform hover:-translate-y-0.5 cursor-pointer">🐱 Cat</button>
+          <button type="button" onclick="quickGenerate('rose')" class="px-3 py-1.5 sm:py-1 bg-electricPink/30 hover:bg-electricPink/50 border-2 border-inkBlack rounded-full transition-transform hover:-translate-y-0.5 cursor-pointer">🌹 Rose</button>
+          <button type="button" onclick="quickGenerate('golden retriever puppy')" class="px-3 py-1.5 sm:py-1 bg-tangerine/30 hover:bg-tangerine/50 border-2 border-inkBlack rounded-full transition-transform hover:-translate-y-0.5 cursor-pointer">🐶 Puppy</button>
+          <button type="button" onclick="quickGenerate('yellow duck')" class="px-3 py-1.5 sm:py-1 bg-skyPop/30 hover:bg-skyPop/50 border-2 border-inkBlack rounded-full transition-transform hover:-translate-y-0.5 cursor-pointer">🦆 Duck</button>
+          <button type="button" onclick="quickGenerate('monarch butterfly')" class="px-3 py-1.5 sm:py-1 bg-grapePop/30 hover:bg-grapePop/50 border-2 border-inkBlack rounded-full transition-transform hover:-translate-y-0.5 cursor-pointer">🦋 Butterfly</button>
+          <button type="button" onclick="quickGenerate('avocado toast with sunglasses')" class="px-3 py-1.5 sm:py-1 bg-mintFresh/40 hover:bg-mintFresh/70 border-2 border-inkBlack rounded-full transition-transform hover:-translate-y-0.5 cursor-pointer">🥑 Cool Avocado</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Active Result & Loading Stage (Visible when generating or displaying a result) -->
+    <section id="result-stage" class="hidden scroll-mt-20 sm:scroll-mt-24">
+      <div class="bg-skyPop border-4 border-inkBlack rounded-2xl sm:rounded-3xl shadow-brutal sm:shadow-brutalLg p-4 sm:p-8">
+        <div class="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 mb-4 sm:mb-6">
+          <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+            <span class="bg-sunny border-3 border-inkBlack px-2.5 sm:px-3 py-1 rounded-xl font-pixel text-xs sm:text-sm font-bold shadow-brutalSm shrink-0">
+              🎨 EMOJI LAB
+            </span>
+            <h2 id="stage-prompt-title" class="font-pixel text-sm sm:text-xl font-bold text-inkBlack truncate max-w-[160px] sm:max-w-md">
+              "cat"
+            </h2>
+          </div>
+
+          <div id="variation-badge" class="hidden bg-white border-3 border-inkBlack px-2.5 sm:px-3 py-1 rounded-full font-pixel text-xs font-bold shadow-brutalSm shrink-0">
+            Version #1
+          </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading-panel" class="hidden bg-white border-4 border-inkBlack rounded-2xl p-6 sm:p-12 text-center shadow-brutal">
+          <div class="flex items-center justify-center gap-2.5 sm:gap-3 mb-5 sm:mb-6 h-12 sm:h-14">
+            <div class="w-7 h-7 sm:w-8 sm:h-8 bg-electricPink border-4 border-inkBlack rounded-md pixel-block-1 shadow-brutalSm"></div>
+            <div class="w-7 h-7 sm:w-8 sm:h-8 bg-sunny border-4 border-inkBlack rounded-md pixel-block-2 shadow-brutalSm"></div>
+            <div class="w-7 h-7 sm:w-8 sm:h-8 bg-mintFresh border-4 border-inkBlack rounded-md pixel-block-3 shadow-brutalSm"></div>
+            <div class="w-7 h-7 sm:w-8 sm:h-8 bg-grapePop border-4 border-inkBlack rounded-md pixel-block-4 shadow-brutalSm"></div>
+          </div>
+
+          <p id="loading-status" class="font-pixel text-sm sm:text-xl font-bold text-inkBlack mb-2">
+            Mixing colorful pixels...
+          </p>
+          <p class="text-xs sm:text-sm font-semibold text-inkBlack/60 mb-4 sm:mb-5">
+            Crafting a custom 8-bit emoji just for you!
+          </p>
+
+          <!-- Chunky Progress Bar -->
+          <div class="max-w-md mx-auto h-5 sm:h-6 bg-creamBg border-4 border-inkBlack rounded-full overflow-hidden p-0.5">
+            <div id="loading-progress-bar" class="h-full bg-electricPink rounded-full transition-all duration-300" style="width: 15%"></div>
+          </div>
+        </div>
+
+        <!-- Loaded Result Panel -->
+        <div id="loaded-panel" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-center">
+          <!-- Emoji Preview Frame -->
+          <div class="lg:col-span-6 flex flex-col items-center">
+            <div id="preview-frame" class="w-full max-w-[270px] sm:max-w-[340px] aspect-square checkerboard border-4 border-inkBlack rounded-2xl shadow-brutal flex items-center justify-center p-4 sm:p-6 relative group">
+              <canvas id="emoji-canvas" class="w-full h-full object-contain pixelated drop-shadow-[0_6px_0_rgba(24,24,27,0.15)]"></canvas>
+
+              <!-- Grid Resolution Pill -->
+              <span id="grid-size-badge" class="absolute bottom-2.5 right-2.5 sm:bottom-3 sm:right-3 bg-sunny/95 border-2 border-inkBlack px-2 sm:px-2.5 py-0.5 rounded-lg font-pixel text-[10px] sm:text-[11px] font-bold">
+                32×32 PX
+              </span>
+            </div>
+
+            <!-- Interactive Style Controls under preview -->
+            <div class="mt-3.5 sm:mt-4 flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                id="toggle-bg-btn"
+                onclick="toggleTransparentBg()"
+                class="btn-brutal-sm bg-white hover:bg-sunny/40 border-3 border-inkBlack rounded-xl px-3 py-2 sm:py-1.5 font-pixel text-xs font-bold shadow-brutalSm flex items-center gap-1.5 cursor-pointer"
+              >
+                <span id="bg-toggle-dot" class="w-3 h-3 rounded-full bg-mintFresh border-2 border-inkBlack inline-block"></span>
+                <span id="bg-toggle-label">Transparent BG: ON</span>
+              </button>
+
+              <button
+                type="button"
+                id="toggle-grid-btn"
+                onclick="cyclePixelDensity()"
+                class="btn-brutal-sm bg-white hover:bg-sunny/40 border-3 border-inkBlack rounded-xl px-3 py-2 sm:py-1.5 font-pixel text-xs font-bold shadow-brutalSm flex items-center gap-1.5 cursor-pointer"
+              >
+                <span>🔲 Crispness: <span id="grid-density-label">32-bit</span></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Action Buttons & Details -->
+          <div class="lg:col-span-6 bg-white border-4 border-inkBlack rounded-2xl p-4 sm:p-7 shadow-brutal space-y-4 sm:space-y-5">
+            <div>
+              <span class="inline-block bg-mintFresh/40 border-2 border-inkBlack px-2.5 py-0.5 rounded-lg font-pixel text-xs font-bold mb-2">
+                ✨ READY TO USE!
+              </span>
+              <h3 id="result-headline" class="font-pixel text-lg sm:text-2xl font-bold text-inkBlack">
+                Your Pixel Emoji
+              </h3>
+              <p class="text-xs sm:text-base text-inkBlack/70 font-medium mt-1">
+                Download as a crisp high-res PNG, copy straight to your clipboard, or generate another version!
+              </p>
+            </div>
+
+            <!-- Primary 3 Action Buttons: Save PNG, Copy, Try Again -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <button
+                type="button"
+                onclick="downloadEmojiPng()"
+                class="btn-brutal min-h-[48px] bg-sunny hover:bg-[#ffe164] text-inkBlack font-pixel text-sm sm:text-base font-bold py-3.5 px-4 border-4 border-inkBlack rounded-2xl shadow-brutal flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>💾 Save as PNG</span>
+              </button>
+
+              <button
+                type="button"
+                id="copy-btn"
+                onclick="copyEmojiToClipboard()"
+                class="btn-brutal min-h-[48px] bg-electricPink hover:bg-[#ff739e] text-white font-pixel text-sm sm:text-base font-bold py-3.5 px-4 border-4 border-inkBlack rounded-2xl shadow-brutal flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span id="copy-btn-text">📋 Copy Emoji</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onclick="tryAgainVariation()"
+              class="btn-brutal min-h-[48px] w-full bg-grapePop hover:bg-[#b86bff] text-white font-pixel text-sm sm:text-base font-bold py-3.5 px-4 sm:px-5 border-4 border-inkBlack rounded-2xl shadow-brutal flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>🔄 Try Again (New Version)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Session Recent Creations Strip (Populates as user creates emojis) -->
+    <section id="recent-section" class="hidden space-y-3.5 sm:space-y-4">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 sm:gap-2.5">
+          <span class="w-3.5 h-3.5 sm:w-4 sm:h-4 bg-electricPink border-2 border-inkBlack rounded-sm inline-block shrink-0"></span>
+          <h2 class="font-pixel text-base sm:text-xl font-bold text-inkBlack">Your Recent Creations</h2>
+        </div>
+        <span id="recent-count" class="font-pixel text-xs font-bold bg-white border-2 border-inkBlack px-2.5 py-1 rounded-lg shrink-0">0 created</span>
+      </div>
+
+      <div id="recent-grid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3 sm:gap-4">
+        <!-- Populated dynamically -->
+      </div>
+    </section>
+
+    <!-- Homepage Pixelated Emoji Showcase Gallery -->
+    <section class="space-y-4 sm:space-y-5">
+      <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+        <div>
+          <div class="inline-flex items-center gap-2 bg-sunny border-2 border-inkBlack px-3 py-0.5 rounded-lg font-pixel text-xs font-bold mb-2 shadow-brutalSm">
+            <span>🌟 STARTER PACK</span>
+          </div>
+          <h2 class="font-pixelTitle text-base sm:text-2xl text-inkBlack">
+            Pixel Emoji Showcase
+          </h2>
+        </div>
+        <p class="text-xs sm:text-sm font-bold text-inkBlack/70">
+          Click any pixel emoji below to inspect, download, or remix it!
+        </p>
+      </div>
+
+      <!-- Showcase Grid (Cat, Dog, Duck, Flower/Rose, Butterfly + Pizza, Rocket, Heart, Ghost, Strawberry) -->
+      <div id="showcase-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-5">
+        <!-- Cards rendered cleanly via JS pixel-matrix renderer -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Playful Footer -->
+  <footer class="mt-10 sm:mt-12 border-t-4 border-inkBlack bg-white py-5 sm:py-6">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3 text-center sm:text-left">
+      <div class="flex flex-wrap items-center justify-center sm:justify-start gap-2 font-pixel text-xs sm:text-sm font-bold">
+        <span class="bg-sunny border-2 border-inkBlack px-2 py-0.5 rounded">pixieMoji</span>
+        <span>Made for bright, retro creativity ✨</span>
+      </div>
+      <p class="text-xs font-bold text-inkBlack/60">
+        Type any word above &bull; Save crisp PNGs &bull; Copy in one click
+      </p>
+    </div>
+  </footer>
+
+  <script>
+    // =========================================================================
+    // 4. MULTI-BACKEND REAL ICON & AI PIXEL IMAGE FETCHING (WORKS IN ANY BROWSER)
+    // =========================================================================
+
+    // Comprehensive strictly-categorized Unicode Emoji lexicon (1,200+ objects, tools,
+    // household items, animals, foods, vehicles, nature, clothing, tech, sports, etc.)
+    // for instant, zero-API-call CDN rendering via jsDelivr (Twemoji, OpenMoji, Noto).
+    const EMOJI_LEXICON = [
+      // Animals (strictly isolated by exact species)
+      { keys: ['cat', 'kitty', 'kitten', 'tabby', 'feline', 'meow'], codes: ['1f431', '1f408', '1f63a', '1f638', '1f63b', '1f408-200d-2b1b'] },
+      { keys: ['black cat'], codes: ['1f408-200d-2b1b'] },
+      { keys: ['dog', 'puppy', 'doggy', 'retriever', 'hound', 'woof', 'pup'], codes: ['1f436', '1f415', '1f429', '1f9ae', '1f415-200d-1f9ba'] },
+      { keys: ['poodle'], codes: ['1f429'] },
+      { keys: ['duck', 'duckling', 'mallard', 'quack'], codes: ['1f986', '1f424', '1f425'] },
+      { keys: ['butterfly', 'moth', 'monarch'], codes: ['1f98b'] },
+      { keys: ['frog', 'toad'], codes: ['1f438'] },
+      { keys: ['unicorn'], codes: ['1f984'] },
+      { keys: ['panda'], codes: ['1f43c'] },
+      { keys: ['dinosaur', 'dino', 'trex', 't-rex', 'sauropod'], codes: ['1f996', '1f995'] },
+      { keys: ['dragon'], codes: ['1f409', '1f432'] },
+      { keys: ['fox'], codes: ['1f98a'] },
+      { keys: ['teddy', 'teddy bear', 'plush', 'plushie', 'toy'], codes: ['1f9f8'] },
+      { keys: ['polar bear'], codes: ['1f43b-200d-2744-fe0f'] },
+      { keys: ['bear'], codes: ['1f43b', '1f43b-200d-2744-fe0f'] },
+      { keys: ['koala'], codes: ['1f428'] },
+      { keys: ['tiger'], codes: ['1f42f', '1f405'] },
+      { keys: ['lion'], codes: ['1f981'] },
+      { keys: ['leopard', 'cheetah', 'jaguar'], codes: ['1f406'] },
+      { keys: ['cow', 'cattle', 'ox', 'buffalo', 'bull'], codes: ['1f42e', '1f404', '1f402', '1f403'] },
+      { keys: ['pig', 'piggy', 'boar', 'hog'], codes: ['1f437', '1f416', '1f417'] },
+      { keys: ['monkey', 'chimp', 'chimpanzee'], codes: ['1f435', '1f412'] },
+      { keys: ['gorilla', 'ape', 'orangutan'], codes: ['1f98d', '1f9a7'] },
+      { keys: ['rabbit', 'bunny', 'hare'], codes: ['1f430', '1f407'] },
+      { keys: ['hamster', 'guinea pig'], codes: ['1f439'] },
+      { keys: ['mouse', 'rat', 'rodent'], codes: ['1f42d', '1f401', '1f400'] },
+      { keys: ['hedgehog', 'porcupine'], codes: ['1f994'] },
+      { keys: ['squirrel', 'chipmunk'], codes: ['1f43f'] },
+      { keys: ['beaver'], codes: ['1f9ab'] },
+      { keys: ['otter'], codes: ['1f9a6'] },
+      { keys: ['sloth'], codes: ['1f9a5'] },
+      { keys: ['skunk'], codes: ['1f9a8'] },
+      { keys: ['badger'], codes: ['1f9a1'] },
+      { keys: ['raccoon'], codes: ['1f99d'] },
+      { keys: ['kangaroo', 'wallaby'], codes: ['1f998'] },
+      { keys: ['horse', 'pony', 'stallion', 'mare'], codes: ['1f434', '1f40e'] },
+      { keys: ['deer', 'reindeer', 'stag', 'elk', 'moose'], codes: ['1f98c'] },
+      { keys: ['sheep', 'lamb', 'ram'], codes: ['1f411', '1f40f'] },
+      { keys: ['goat'], codes: ['1f410'] },
+      { keys: ['camel', 'llama', 'alpaca'], codes: ['1f42b', '1f42a', '1f999'] },
+      { keys: ['elephant', 'mammoth'], codes: ['1f418', '1f9a3'] },
+      { keys: ['rhino', 'rhinoceros'], codes: ['1f98f'] },
+      { keys: ['hippo', 'hippopotamus'], codes: ['1f99b'] },
+      { keys: ['giraffe'], codes: ['1f992'] },
+      { keys: ['zebra'], codes: ['1f993'] },
+      { keys: ['wolf'], codes: ['1f43a'] },
+      { keys: ['bat'], codes: ['1f987'] },
+      { keys: ['chicken', 'rooster', 'hen', 'chick'], codes: ['1f414', '1f413', '1f423', '1f425'] },
+      { keys: ['turkey'], codes: ['1f983'] },
+      { keys: ['peacock'], codes: ['1f99a'] },
+      { keys: ['owl'], codes: ['1f989'] },
+      { keys: ['penguin'], codes: ['1f427'] },
+      { keys: ['flamingo'], codes: ['1f9a9'] },
+      { keys: ['parrot', 'macaw', 'cockatoo'], codes: ['1f99c'] },
+      { keys: ['eagle', 'hawk', 'falcon'], codes: ['1f985'] },
+      { keys: ['bird', 'dove', 'crow', 'raven', 'pigeon', 'sparrow'], codes: ['1f426', '1f54a', '1f426-200d-2b1b'] },
+      { keys: ['swan', 'goose'], codes: ['1f9a2', '1fabf'] },
+      { keys: ['fish', 'goldfish', 'blowfish', 'trout', 'salmon'], codes: ['1f420', '1f41f', '1f421'] },
+      { keys: ['shark'], codes: ['1f988'] },
+      { keys: ['whale', 'orca'], codes: ['1f433', '1f40b'] },
+      { keys: ['dolphin'], codes: ['1f42c'] },
+      { keys: ['seal', 'sea lion', 'walrus'], codes: ['1f9ad'] },
+      { keys: ['octopus'], codes: ['1f419'] },
+      { keys: ['squid'], codes: ['1f991'] },
+      { keys: ['crab'], codes: ['1f980'] },
+      { keys: ['lobster'], codes: ['1f99e'] },
+      { keys: ['shrimp', 'prawn'], codes: ['1f990'] },
+      { keys: ['oyster', 'clam', 'shell', 'seashell'], codes: ['1f9aa', '1f41a'] },
+      { keys: ['turtle', 'tortoise'], codes: ['1f422'] },
+      { keys: ['crocodile', 'alligator'], codes: ['1f40a'] },
+      { keys: ['lizard', 'gecko', 'iguana', 'chameleon'], codes: ['1f98e'] },
+      { keys: ['jellyfish'], codes: ['1fabc'] },
+      { keys: ['coral'], codes: ['1fab8'] },
+      { keys: ['bee', 'honeybee', 'wasp', 'bumblebee'], codes: ['1f41d'] },
+      { keys: ['ladybug', 'beetle'], codes: ['1f41e', '1fab2'] },
+      { keys: ['ant'], codes: ['1f41c'] },
+      { keys: ['caterpillar', 'worm', 'bug', 'centipede'], codes: ['1f41b', '1fab1'] },
+      { keys: ['cricket', 'grasshopper', 'locust'], codes: ['1f997'] },
+      { keys: ['cockroach', 'roach'], codes: ['1fab3'] },
+      { keys: ['fly', 'mosquito'], codes: ['1fab0', '1f99f'] },
+      { keys: ['snail', 'slug'], codes: ['1f40c'] },
+      { keys: ['spider', 'tarantula', 'web', 'spiderweb'], codes: ['1f577', '1f578'] },
+      { keys: ['scorpion'], codes: ['1f982'] },
+      { keys: ['snake', 'python', 'cobra', 'viper'], codes: ['1f40d'] },
+      { keys: ['feather', 'wing'], codes: ['1fab6', '1fabd'] },
+      { keys: ['paw', 'pawprint', 'footprint'], codes: ['1f43e', '1f463'] },
+      { keys: ['bone'], codes: ['1f9b4'] },
+
+      // Flowers & Nature (each flower & plant strictly separated!)
+      { keys: ['rose', 'roses'], codes: ['1f339'] },
+      { keys: ['wilted rose'], codes: ['1f940'] },
+      { keys: ['sunflower'], codes: ['1f33b'] },
+      { keys: ['tulip'], codes: ['1f337'] },
+      { keys: ['hibiscus'], codes: ['1f33a'] },
+      { keys: ['cherry blossom', 'sakura'], codes: ['1f338'] },
+      { keys: ['lotus'], codes: ['1fab7'] },
+      { keys: ['blossom', 'daisy'], codes: ['1f33c'] },
+      { keys: ['bouquet'], codes: ['1f490'] },
+      { keys: ['flower'], codes: ['1f338', '1f33c', '1f33a', '1f337'] },
+      { keys: ['tree', 'forest', 'oak', 'pine', 'wood'], codes: ['1f333', '1f332'] },
+      { keys: ['christmas tree', 'xmas tree'], codes: ['1f384'] },
+      { keys: ['palm', 'palm tree'], codes: ['1f334'] },
+      { keys: ['cactus'], codes: ['1f335'] },
+      { keys: ['bamboo'], codes: ['1f38d'] },
+      { keys: ['mushroom', 'toadstool', 'fungus'], codes: ['1f344'] },
+      { keys: ['clover', 'shamrock'], codes: ['1f340', '2618'] },
+      { keys: ['maple leaf'], codes: ['1f341'] },
+      { keys: ['leaf', 'leaves', 'herb', 'fern'], codes: ['1f33f', '1f341', '1f343'] },
+      { keys: ['plant', 'sprout', 'seedling', 'potted plant'], codes: ['1fab4', '1f331'] },
+      { keys: ['rock', 'stone', 'boulder', 'pebble'], codes: ['1faa8'] },
+      { keys: ['log', 'firewood', 'timber'], codes: ['1fab5'] },
+      { keys: ['nest', 'bird nest'], codes: ['1fab9', '1faba'] },
+      { keys: ['mountain', 'volcano', 'hill', 'peak'], codes: ['26f0', '1f3d4', '1f30b'] },
+      { keys: ['beach', 'island'], codes: ['1f3d6', '1f3dd'] },
+      { keys: ['desert', 'dune'], codes: ['1f3dc'] },
+      { keys: ['wave', 'ocean', 'sea', 'tsunami'], codes: ['1f30a'] },
+
+      // Vehicles, Boats & Transport (strictly separated!)
+      { keys: ['sailboat'], codes: ['26f5'] },
+      { keys: ['speedboat', 'motorboat'], codes: ['1f6a4'] },
+      { keys: ['ship', 'cruise ship', 'ferry', 'liner'], codes: ['1f6a2', '1f6f3', '26f4'] },
+      { keys: ['canoe', 'kayak', 'rowboat'], codes: ['1f6f6'] },
+      { keys: ['boat', 'yacht', 'vessel'], codes: ['26f5', '1f6a4', '1f6f6'] },
+      { keys: ['anchor'], codes: ['2693'] },
+      { keys: ['lifebuoy', 'life ring', 'buoy'], codes: ['1f6df'] },
+      { keys: ['taxi', 'cab'], codes: ['1f695'] },
+      { keys: ['race car', 'racecar', 'formula', 'f1'], codes: ['1f3ce'] },
+      { keys: ['car', 'automobile', 'sedan', 'suv', 'jeep'], codes: ['1f697', '1f699'] },
+      { keys: ['police car', 'police', 'cop car'], codes: ['1f693'] },
+      { keys: ['ambulance'], codes: ['1f691'] },
+      { keys: ['firetruck', 'fire truck', 'fire engine'], codes: ['1f692'] },
+      { keys: ['tractor'], codes: ['1f69c'] },
+      { keys: ['truck', 'pickup', 'lorry', 'van'], codes: ['1f69a', '1f6fb', '1f69b'] },
+      { keys: ['bus', 'minibus', 'trolley'], codes: ['1f68c', '1f68e', '1f690'] },
+      { keys: ['train', 'locomotive', 'subway', 'metro', 'tram', 'monorail'], codes: ['1f686', '1f682', '1f684', '1f687', '1f68a'] },
+      { keys: ['airplane', 'plane', 'jet', 'aircraft'], codes: ['2708', '1f6e9', '1f6eb'] },
+      { keys: ['helicopter', 'chopper'], codes: ['1f681'] },
+      { keys: ['parachute'], codes: ['1fa82'] },
+      { keys: ['bike', 'bicycle'], codes: ['1f6b2'] },
+      { keys: ['scooter', 'vespa', 'moped'], codes: ['1f6f5', '1f6f4'] },
+      { keys: ['motorcycle', 'motorbike'], codes: ['1f3cd'] },
+      { keys: ['skateboard'], codes: ['1f6f9'] },
+      { keys: ['roller skate', 'skates'], codes: ['1f6fc'] },
+      { keys: ['wheel', 'tire'], codes: ['1f6de'] },
+      { keys: ['fuel', 'gas pump', 'gas station'], codes: ['26fd'] },
+      { keys: ['traffic light', 'stoplight'], codes: ['1f6a6', '1f6a5'] },
+      { keys: ['rocket', 'spaceship', 'shuttle'], codes: ['1f680'] },
+      { keys: ['ufo', 'flying saucer'], codes: ['1f6f8'] },
+      { keys: ['satellite'], codes: ['1f6f0'] },
+
+      // Food, Drinks & Kitchenware (strictly separated!)
+      { keys: ['avocado'], codes: ['1f951'] },
+      { keys: ['pizza'], codes: ['1f355'] },
+      { keys: ['strawberry'], codes: ['1f353'] },
+      { keys: ['blueberry', 'berry', 'berries'], codes: ['1fad0'] },
+      { keys: ['green apple'], codes: ['1f34f'] },
+      { keys: ['apple'], codes: ['1f34e', '1f34f'] },
+      { keys: ['pear'], codes: ['1f350'] },
+      { keys: ['banana'], codes: ['1f34c'] },
+      { keys: ['watermelon'], codes: ['1f349'] },
+      { keys: ['melon', 'cantaloupe'], codes: ['1f348'] },
+      { keys: ['grape', 'grapes'], codes: ['1f347'] },
+      { keys: ['orange', 'tangerine', 'mandarin'], codes: ['1f34a'] },
+      { keys: ['lemon', 'lime', 'citrus'], codes: ['1f34b'] },
+      { keys: ['peach'], codes: ['1f351'] },
+      { keys: ['cherry', 'cherries'], codes: ['1f352'] },
+      { keys: ['pineapple'], codes: ['1f34d'] },
+      { keys: ['mango'], codes: ['1f96d'] },
+      { keys: ['kiwi'], codes: ['1f95d'] },
+      { keys: ['coconut'], codes: ['1f965'] },
+      { keys: ['olive', 'olives'], codes: ['1fad2'] },
+      { keys: ['tomato'], codes: ['1f345'] },
+      { keys: ['eggplant', 'aubergine'], codes: ['1f346'] },
+      { keys: ['carrot'], codes: ['1f955'] },
+      { keys: ['corn', 'maize'], codes: ['1f33d'] },
+      { keys: ['broccoli'], codes: ['1f966'] },
+      { keys: ['lettuce', 'cabbage', 'greens'], codes: ['1f96c'] },
+      { keys: ['cucumber', 'pickle'], codes: ['1f952'] },
+      { keys: ['chili', 'pepper', 'bell pepper', 'jalapeno', 'spicy'], codes: ['1f336', '1fad1'] },
+      { keys: ['potato'], codes: ['1f954'] },
+      { keys: ['sweet potato', 'yam'], codes: ['1f360'] },
+      { keys: ['garlic'], codes: ['1f9c4'] },
+      { keys: ['onion'], codes: ['1f9c5'] },
+      { keys: ['ginger'], codes: ['1fada'] },
+      { keys: ['peas', 'pea pod', 'beans', 'edamame'], codes: ['1fadb', '1fad8'] },
+      { keys: ['peanut', 'peanuts', 'nut', 'chestnut'], codes: ['1f95c', '1f330'] },
+      { keys: ['pumpkin', 'jack o lantern'], codes: ['1f383'] },
+      { keys: ['burger', 'hamburger', 'cheeseburger'], codes: ['1f354'] },
+      { keys: ['fries', 'french fries'], codes: ['1f35f'] },
+      { keys: ['hotdog', 'hot dog', 'sausage'], codes: ['1f32d'] },
+      { keys: ['sandwich'], codes: ['1f96a'] },
+      { keys: ['taco'], codes: ['1f32e'] },
+      { keys: ['burrito', 'wrap'], codes: ['1f32f'] },
+      { keys: ['tamale'], codes: ['1fad4'] },
+      { keys: ['falafel'], codes: ['1f9c6'] },
+      { keys: ['salad'], codes: ['1f957'] },
+      { keys: ['spaghetti', 'pasta'], codes: ['1f35d'] },
+      { keys: ['sushi', 'sashimi'], codes: ['1f363'] },
+      { keys: ['shrimp tempura', 'tempura'], codes: ['1f364'] },
+      { keys: ['bento', 'lunchbox'], codes: ['1f371'] },
+      { keys: ['rice', 'onigiri', 'rice ball', 'rice cracker'], codes: ['1f35a', '1f359', '1f358'] },
+      { keys: ['curry'], codes: ['1f35b'] },
+      { keys: ['dumpling', 'gyoza', 'pierogi'], codes: ['1f95f'] },
+      { keys: ['ramen', 'noodle', 'noodles', 'soup', 'stew', 'pho'], codes: ['1f35c', '1f372'] },
+      { keys: ['fondue', 'pot', 'cooking pot', 'cauldron'], codes: ['1fad5', '1f372'] },
+      { keys: ['pan', 'frying pan', 'skillet'], codes: ['1f373'] },
+      { keys: ['steak', 'meat', 'rib', 'poultry', 'chicken leg'], codes: ['1f969', '1f356', '1f357'] },
+      { keys: ['bacon'], codes: ['1f953'] },
+      { keys: ['pancake', 'pancakes', 'crepe'], codes: ['1f95e'] },
+      { keys: ['waffle'], codes: ['1f9c7'] },
+      { keys: ['pretzel'], codes: ['1f968'] },
+      { keys: ['bagel'], codes: ['1f96f'] },
+      { keys: ['baguette'], codes: ['1f956'] },
+      { keys: ['croissant'], codes: ['1f950'] },
+      { keys: ['flatbread', 'pita', 'naan'], codes: ['1fad3'] },
+      { keys: ['bread', 'toast', 'loaf'], codes: ['1f35e'] },
+      { keys: ['butter'], codes: ['1f9c8'] },
+      { keys: ['salt', 'shaker', 'spice'], codes: ['1f9c2'] },
+      { keys: ['knife', 'kitchen knife', 'chef knife'], codes: ['1f52a'] },
+      { keys: ['fork', 'cutlery', 'utensils'], codes: ['1f374'] },
+      { keys: ['spoon'], codes: ['1f944'] },
+      { keys: ['chopsticks'], codes: ['1f962'] },
+      { keys: ['plate', 'dish'], codes: ['1f37d'] },
+      { keys: ['bowl'], codes: ['1f963'] },
+      { keys: ['cup', 'mug', 'teacup'], codes: ['2615', '1f964'] },
+      { keys: ['bottle', 'baby bottle', 'flask'], codes: ['1f37c', '1f9ea'] },
+      { keys: ['jar', 'mason jar', 'can', 'canned food'], codes: ['1fad9', '1f96b'] },
+      { keys: ['egg'], codes: ['1f373', '1f95a'] },
+      { keys: ['cheese'], codes: ['1f9c0'] },
+      { keys: ['popcorn'], codes: ['1f37f'] },
+      { keys: ['donut', 'doughnut'], codes: ['1f369'] },
+      { keys: ['birthday cake'], codes: ['1f382'] },
+      { keys: ['cake', 'shortcake', 'pastry'], codes: ['1f370', '1f382'] },
+      { keys: ['cupcake', 'muffin'], codes: ['1f9c1'] },
+      { keys: ['pie', 'tart'], codes: ['1f967'] },
+      { keys: ['cookie', 'biscuit'], codes: ['1f36a'] },
+      { keys: ['ice cream', 'icecream', 'gelato', 'sundae'], codes: ['1f368', '1f366', '1f367'] },
+      { keys: ['chocolate', 'candy bar'], codes: ['1f36b'] },
+      { keys: ['lollipop'], codes: ['1f36d'] },
+      { keys: ['candy', 'sweet'], codes: ['1f36c'] },
+      { keys: ['custard', 'pudding', 'flan'], codes: ['1f36e'] },
+      { keys: ['honey', 'honeypot'], codes: ['1f36f'] },
+      { keys: ['boba', 'bubble tea', 'milk tea'], codes: ['1f9cb'] },
+      { keys: ['coffee', 'latte', 'espresso', 'cappuccino'], codes: ['2615'] },
+      { keys: ['tea', 'matcha', 'teapot', 'kettle'], codes: ['1f375', '1fad6'] },
+      { keys: ['juice', 'juice box', 'smoothie'], codes: ['1f9c3'] },
+      { keys: ['milk', 'glass of milk'], codes: ['1f95b'] },
+      { keys: ['soda', 'cola', 'soft drink'], codes: ['1f964'] },
+      { keys: ['water bottle', 'pouring'], codes: ['1fad7'] },
+      { keys: ['beer', 'ale', 'pint'], codes: ['1f37a', '1f37b'] },
+      { keys: ['wine', 'wineglass'], codes: ['1f377'] },
+      { keys: ['champagne', 'prosecco'], codes: ['1f37e', '1f942'] },
+      { keys: ['cocktail', 'martini', 'drink'], codes: ['1f378', '1f379'] },
+      { keys: ['whiskey', 'tumbler'], codes: ['1f943'] },
+      { keys: ['mate', 'yerba'], codes: ['1f9c9'] },
+      { keys: ['ice cube', 'ice'], codes: ['1f9ca'] },
+
+      // Broad Category & Group Words (cycles through diverse items in that category!)
+      { keys: ['fruit', 'fruits'], codes: ['1f34e', '1f353', '1f34c', '1f349', '1f34d', '1f351', '1f352', '1f347'] },
+      { keys: ['vegetable', 'vegetables', 'veggie', 'veggies'], codes: ['1f955', '1f966', '1f345', '1f33d', '1f346', '1f952', '1f336'] },
+      { keys: ['food', 'foods', 'meal', 'snack', 'snacks', 'lunch', 'dinner', 'breakfast'], codes: ['1f355', '1f354', '1f32e', '1f363', '1f35c', '1f95e', '1f35f'] },
+      { keys: ['fast food', 'junk food'], codes: ['1f354', '1f355', '1f35f', '1f32d', '1f32e'] },
+      { keys: ['dessert', 'desserts', 'sweets', 'treat', 'treats'], codes: ['1f370', '1f369', '1f368', '1f9c1', '1f36a', '1f36b'] },
+      { keys: ['drink', 'drinks', 'beverage', 'beverages'], codes: ['1f9cb', '2615', '1f9c3', '1f379', '1f964'] },
+      { keys: ['animal', 'animals', 'pet', 'pets', 'wildlife', 'critter'], codes: ['1f431', '1f436', '1f430', '1f98a', '1f43b', '1f43c', '1f981'] },
+      { keys: ['bird', 'birds'], codes: ['1f426', '1f986', '1f989', '1f99c', '1f427', '1f9a9'] },
+      { keys: ['bug', 'bugs', 'insect', 'insects'], codes: ['1f98b', '1f41d', '1f41e', '1f41b', '1f41c'] },
+      { keys: ['sea animal', 'sea animals', 'ocean animal', 'marine', 'sea life'], codes: ['1f420', '1f419', '1f42c', '1f433', '1f980', '1f422'] },
+      { keys: ['flower', 'flowers', 'floral', 'bloom'], codes: ['1f339', '1f33b', '1f337', '1f338', '1f33a', '1f33c'] },
+      { keys: ['vehicle', 'vehicles', 'transport', 'transportation'], codes: ['1f697', '1f68c', '1f686', '2708', '26f5', '1f680'] },
+      { keys: ['toy', 'toys'], codes: ['1f9f8', '1fa80', '1fa81', '1f3ae', '1f3b2'] },
+      { keys: ['tool', 'tools', 'hardware'], codes: ['1f528', '1f527', '1fa9b', '1fa9a', '1f9f0'] },
+      { keys: ['clothes', 'clothing', 'outfit', 'apparel', 'fashion'], codes: ['1f455', '1f456', '1f457', '1f9e5', '1f45f', '1f9e2'] },
+      { keys: ['instrument', 'instruments', 'musical instrument'], codes: ['1f3b8', '1f3b9', '1f3ba', '1f3b7', '1f941', '1f3bb'] },
+      { keys: ['sport', 'sports', 'ball'], codes: ['26bd', '1f3c0', '1f3c8', '26be', '1f3be', '1f3d0'] },
+      { keys: ['weather'], codes: ['2600', '26c5', '1f327', '26a1', '1f308', '2744'] },
+      { keys: ['space', 'cosmos', 'galaxy', 'universe'], codes: ['1f680', '1fa90', '1f319', '2b50', '1f6f8', '2604'] },
+      { keys: ['furniture'], codes: ['1fa91', '1f6cb', '1f6cf', '1f6aa', '1fa9f'] },
+      { keys: ['electronics', 'tech', 'gadget', 'gadgets', 'device', 'devices'], codes: ['1f4f1', '1f4bb', '1f3ae', '1f3a7', '1f4f7', '1f4fa'] },
+
+      // Household Furniture, Appliances & Home Objects
+      { keys: ['chair', 'seat', 'stool', 'armchair'], codes: ['1fa91'] },
+      { keys: ['table', 'desk', 'dining table', 'coffee table'], codes: ['1f37d', '1fa91'] },
+      { keys: ['couch', 'sofa', 'loveseat'], codes: ['1f6cb'] },
+      { keys: ['bed', 'mattress', 'bedroom'], codes: ['1f6cf'] },
+      { keys: ['pillow', 'cushion'], codes: ['1f6cb', '1f9f8'] },
+      { keys: ['blanket', 'duvet', 'quilt', 'sheet', 'bedding'], codes: ['1f9e3', '1f6cf'] },
+      { keys: ['door', 'doorway', 'entrance'], codes: ['1f6aa'] },
+      { keys: ['window', 'curtain', 'curtains', 'blinds'], codes: ['1fa9f'] },
+      { keys: ['mirror'], codes: ['1fa9e'] },
+      { keys: ['lamp', 'light', 'lantern'], codes: ['1f4a1', '1f3ee'] },
+      { keys: ['fridge', 'refrigerator', 'freezer'], codes: ['1f9ca'] },
+      { keys: ['oven', 'stove', 'microwave', 'toaster'], codes: ['1f373', '1f35e'] },
+      { keys: ['toilet', 'restroom', 'bathroom'], codes: ['1f6bd'] },
+      { keys: ['shower'], codes: ['1f6bf'] },
+      { keys: ['bathtub', 'bath', 'tub'], codes: ['1f6c1', '1f6c0'] },
+      { keys: ['sink', 'faucet', 'tap'], codes: ['1f6b0'] },
+      { keys: ['plunger'], codes: ['1faa0'] },
+      { keys: ['toilet paper', 'tissue', 'paper towel'], codes: ['1f9fb'] },
+      { keys: ['soap', 'bar of soap'], codes: ['1f9fc'] },
+      { keys: ['sponge'], codes: ['1f9fd'] },
+      { keys: ['bubbles', 'foam', 'suds'], codes: ['1fae7'] },
+      { keys: ['toothbrush'], codes: ['1faa5'] },
+      { keys: ['razor', 'shaver'], codes: ['1fa92'] },
+      { keys: ['lotion', 'shampoo', 'sunscreen', 'cream'], codes: ['1f9f4'] },
+      { keys: ['broom'], codes: ['1f9f9'] },
+      { keys: ['bucket', 'pail'], codes: ['1faa3'] },
+      { keys: ['basket', 'laundry'], codes: ['1f9fa'] },
+      { keys: ['trash', 'trash can', 'garbage', 'bin', 'wastebasket'], codes: ['1f5d1'] },
+      { keys: ['box', 'package', 'parcel', 'cardboard'], codes: ['1f4e6'] },
+      { keys: ['mailbox', 'postbox'], codes: ['1f4eb', '1f4ee'] },
+      { keys: ['bell', 'doorbell'], codes: ['1f514', '1f6ce'] },
+      { keys: ['fire extinguisher', 'extinguisher'], codes: ['1f9ef'] },
+      { keys: ['shopping cart', 'cart', 'trolley'], codes: ['1f6d2'] },
+      { keys: ['shopping bag', 'tote'], codes: ['1f6cd'] },
+
+      // Tools, Hardware & Construction
+      { keys: ['hammer'], codes: ['1f528'] },
+      { keys: ['wrench', 'spanner'], codes: ['1f527'] },
+      { keys: ['screwdriver'], codes: ['1fa9b'] },
+      { keys: ['saw', 'carpentry saw', 'handsaw'], codes: ['1fa9a'] },
+      { keys: ['axe', 'hatchet'], codes: ['1fa93'] },
+      { keys: ['pickaxe', 'pick'], codes: ['26cf'] },
+      { keys: ['shovel', 'spade'], codes: ['1fa9e', '26cf'] },
+      { keys: ['nut and bolt', 'bolt', 'screw', 'nail'], codes: ['1f529'] },
+      { keys: ['gear', 'cog', 'cogwheel'], codes: ['2699'] },
+      { keys: ['chain', 'chains', 'link'], codes: ['26d3', '1f517'] },
+      { keys: ['hook'], codes: ['1fa9d'] },
+      { keys: ['ladder'], codes: ['1fa9c'] },
+      { keys: ['brick', 'bricks', 'wall'], codes: ['1f9f1'] },
+      { keys: ['magnet'], codes: ['1f9f2'] },
+      { keys: ['toolbox', 'tools'], codes: ['1f9f0'] },
+      { keys: ['clamp', 'vise'], codes: ['1f5dc'] },
+      { keys: ['scale', 'balance'], codes: ['2696'] },
+      { keys: ['mousetrap', 'trap'], codes: ['1faa4'] },
+      { keys: ['broomstick'], codes: ['1f9f9'] },
+      { keys: ['rope', 'knot'], codes: ['1faa2'] },
+      { keys: ['thread', 'spool', 'yarn', 'wool'], codes: ['1f9f5', '1f9f6'] },
+      { keys: ['needle', 'sewing', 'pin', 'safety pin'], codes: ['1faa1', '1f9f7'] },
+
+      // Office, School & Stationery
+      { keys: ['book', 'books', 'notebook', 'textbook', 'journal', 'diary'], codes: ['1f4da', '1f4d6', '1f4d3', '1f4d4'] },
+      { keys: ['bookmark'], codes: ['1f516'] },
+      { keys: ['newspaper', 'paper', 'document', 'page', 'scroll'], codes: ['1f4f0', '1f4c4', '1f4dc'] },
+      { keys: ['pencil'], codes: ['270f'] },
+      { keys: ['pen', 'fountain pen', 'ballpoint'], codes: ['1f58a', '1f58b'] },
+      { keys: ['crayon'], codes: ['1f58d'] },
+      { keys: ['paintbrush', 'brush', 'paint', 'palette', 'art'], codes: ['1f58c', '1f3a8'] },
+      { keys: ['ruler', 'triangle ruler'], codes: ['1f4cf', '1f4d0'] },
+      { keys: ['scissors'], codes: ['2702'] },
+      { keys: ['paperclip', 'clip'], codes: ['1f4ce', '1f587'] },
+      { keys: ['pushpin', 'thumbtack', 'tack'], codes: ['1f4cc', '1f4cd'] },
+      { keys: ['folder', 'file', 'briefcase'], codes: ['1f4c1', '1f4c2', '1f4bc'] },
+      { keys: ['calendar', 'date'], codes: ['1f4c5', '1f4c6'] },
+      { keys: ['clipboard', 'chart', 'graph'], codes: ['1f4cb', '1f4ca', '1f4c8'] },
+      { keys: ['abacus', 'calculator'], codes: ['1f9ee'] },
+      { keys: ['magnifying glass', 'magnifier', 'search', 'zoom'], codes: ['1f50d', '1f50e'] },
+      { keys: ['mail', 'letter', 'envelope', 'email'], codes: ['2709', '1f48c', '1f4e7'] },
+      { keys: ['stamp', 'postage'], codes: ['1f4ee'] },
+      { keys: ['globe', 'world map', 'map'], codes: ['1f30d', '1f5fa'] },
+      { keys: ['graduation cap', 'diploma', 'degree'], codes: ['1f393'] },
+      { keys: ['backpack', 'schoolbag', 'bag', 'satchel'], codes: ['1f392'] },
+
+      // Electronics, Tech & Gadgets
+      { keys: ['phone', 'smartphone', 'iphone', 'mobile', 'cellphone'], codes: ['1f4f1'] },
+      { keys: ['telephone', 'landline'], codes: ['260e', '1f4de'] },
+      { keys: ['laptop', 'macbook', 'notebook computer'], codes: ['1f4bb'] },
+      { keys: ['computer', 'desktop', 'pc', 'monitor', 'screen'], codes: ['1f5a5'] },
+      { keys: ['keyboard'], codes: ['2328'] },
+      { keys: ['computer mouse', 'trackpad'], codes: ['1f5b1'] },
+      { keys: ['printer'], codes: ['1f5a8'] },
+      { keys: ['hard drive', 'floppy', 'disk', 'cd', 'dvd'], codes: ['1f4be', '1f4bf', '1f4c0'] },
+      { keys: ['battery'], codes: ['1f50b', '1faab'] },
+      { keys: ['plug', 'electric plug', 'charger', 'cable'], codes: ['1f50c'] },
+      { keys: ['lightbulb', 'bulb', 'idea'], codes: ['1f4a1'] },
+      { keys: ['flashlight', 'torch'], codes: ['1f526'] },
+      { keys: ['candle'], codes: ['1f56f'] },
+      { keys: ['camera', 'dslr', 'polaroid'], codes: ['1f4f7', '1f4f8'] },
+      { keys: ['video camera', 'camcorder', 'projector'], codes: ['1f4f9', '1f3a5', '1f4fd'] },
+      { keys: ['tv', 'television'], codes: ['1f4fa'] },
+      { keys: ['radio', 'walkie talkie'], codes: ['1f4fb'] },
+      { keys: ['speaker', 'loudspeaker', 'megaphone'], codes: ['1f50a', '1f4e2', '1f4e3'] },
+      { keys: ['headphones', 'headset', 'earphones'], codes: ['1f3a7'] },
+      { keys: ['microphone', 'mic'], codes: ['1f3a4', '1f399'] },
+      { keys: ['game', 'controller', 'joystick', 'gaming', 'arcade', 'console'], codes: ['1f3ae', '1f579'] },
+      { keys: ['satellite dish', 'antenna', 'radar'], codes: ['1f4e1'] },
+
+      // Clothing, Footwear, Jewelry & Beauty
+      { keys: ['sunglasses', 'shades'], codes: ['1f576'] },
+      { keys: ['glasses', 'eyeglasses', 'spectacles', 'goggles'], codes: ['1f453', '1f97d'] },
+      { keys: ['hat', 'cap', 'tophat', 'beanie', 'sunhat'], codes: ['1f3a9', '1f9e2', '1f452'] },
+      { keys: ['helmet', 'hard hat'], codes: ['26d1', '1fa96'] },
+      { keys: ['crown', 'tiara'], codes: ['1f451'] },
+      { keys: ['scarf'], codes: ['1f9e3'] },
+      { keys: ['gloves', 'mittens'], codes: ['1f9e4'] },
+      { keys: ['coat', 'jacket', 'vest'], codes: ['1f9e5', '1f9ba'] },
+      { keys: ['shirt', 'tshirt', 't-shirt', 'hoodie', 'sweater'], codes: ['1f455'] },
+      { keys: ['tie', 'necktie', 'suit'], codes: ['1f454'] },
+      { keys: ['dress', 'gown', 'kimono', 'sari'], codes: ['1f457', '1f458', '1f97b'] },
+      { keys: ['jeans', 'pants', 'trousers', 'shorts'], codes: ['1f456', '1fa73'] },
+      { keys: ['skirt'], codes: ['1fa71'] },
+      { keys: ['swimsuit', 'bikini'], codes: ['1fa72', '1f459'] },
+      { keys: ['socks', 'sock'], codes: ['1f9e6'] },
+      { keys: ['shoe', 'sneaker', 'running shoe', 'trainer'], codes: ['1f45f'] },
+      { keys: ['boot', 'hiking boot'], codes: ['1f97e', '1f462'] },
+      { keys: ['heel', 'high heel', 'sandal', 'flip flop', 'slipper'], codes: ['1f460', '1f461', '1fa74', '1fa70'] },
+      // Jewelry, Cosmetics & Beauty
+      { keys: ['ring', 'engagement ring'], codes: ['1f48d'] },
+      { keys: ['necklace', 'beads', 'pearl'], codes: ['1f4ff'] },
+      { keys: ['diamond', 'gem', 'jewel', 'ruby', 'emerald'], codes: ['1f48e'] },
+      { keys: ['lipstick', 'makeup'], codes: ['1f484'] },
+      { keys: ['comb', 'hairbrush', 'haircut'], codes: ['1f487'] },
+      { keys: ['nail polish', 'manicure'], codes: ['1f485'] },
+      { keys: ['umbrella', 'parasol'], codes: ['2602', '2614'] },
+      { keys: ['luggage', 'suitcase', 'baggage'], codes: ['1f9f3'] },
+
+      // Medical, Science & Lab
+      { keys: ['pill', 'capsule', 'medicine', 'vitamin'], codes: ['1f48a'] },
+      { keys: ['syringe', 'needle', 'vaccine', 'injection'], codes: ['1f489'] },
+      { keys: ['bandage', 'bandaid', 'plaster'], codes: ['1fa79'] },
+      { keys: ['stethoscope', 'doctor'], codes: ['1fa7a'] },
+      { keys: ['xray', 'x-ray'], codes: ['1fa7b'] },
+      { keys: ['crutch', 'wheelchair'], codes: ['1fa7c', '1f9bd'] },
+      { keys: ['microscope'], codes: ['1f52c'] },
+      { keys: ['telescope'], codes: ['1f52d'] },
+      { keys: ['potion', 'test tube', 'beaker', 'science', 'chemistry'], codes: ['1f9ea', '2697'] },
+      { keys: ['petri dish', 'bacteria', 'microbe', 'germ', 'virus'], codes: ['1f9eb', '1f9a0'] },
+      { keys: ['dna', 'genetics'], codes: ['1f9ec'] },
+
+      // Music, Arts & Entertainment
+      { keys: ['guitar', 'electric guitar'], codes: ['1f3b8'] },
+      { keys: ['violin', 'cello'], codes: ['1f3bb'] },
+      { keys: ['banjo'], codes: ['1fa95'] },
+      { keys: ['trumpet', 'horn'], codes: ['1f3ba'] },
+      { keys: ['saxophone', 'sax'], codes: ['1f3b7'] },
+      { keys: ['accordion'], codes: ['1fa97'] },
+      { keys: ['flute'], codes: ['1fa88'] },
+      { keys: ['piano', 'keyboard instrument'], codes: ['1f3b9'] },
+      { keys: ['drum', 'drums', 'maracas'], codes: ['1f941', '1fa87'] },
+      { keys: ['music', 'note', 'melody', 'song'], codes: ['1f3b5', '1f3b6'] },
+      { keys: ['movie', 'film', 'clapperboard', 'cinema'], codes: ['1f3ac', '1f39e'] },
+      { keys: ['ticket', 'tickets', 'pass'], codes: ['1f3ab', '1f39f'] },
+      { keys: ['mask', 'theater', 'drama'], codes: ['1f3ad'] },
+      { keys: ['circus', 'tent'], codes: ['1f3aa', '26fa'] },
+      { keys: ['dice', 'die'], codes: ['1f3b2'] },
+      { keys: ['puzzle', 'jigsaw'], codes: ['1f9e9'] },
+      { keys: ['chess', 'pawn', 'knight'], codes: ['265f'] },
+      { keys: ['cards', 'playing card', 'joker', 'ace'], codes: ['1f0cf', '1f004'] },
+      { keys: ['target', 'bullseye', 'dart', 'dartboard'], codes: ['1f3af'] },
+      { keys: ['yo-yo', 'yoyo'], codes: ['1fa80'] },
+      { keys: ['kite'], codes: ['1fa81'] },
+      { keys: ['pinata'], codes: ['1fa85'] },
+      { keys: ['nesting doll', 'matryoshka'], codes: ['1fa86'] },
+      { keys: ['magic wand', 'wand'], codes: ['1fa84'] },
+      { keys: ['crystal ball'], codes: ['1f52e'] },
+      { keys: ['balloon'], codes: ['1f388'] },
+      { keys: ['gift', 'present', 'surprise'], codes: ['1f381'] },
+      { keys: ['ribbon', 'bow'], codes: ['1f380'] },
+      { keys: ['confetti', 'party popper'], codes: ['1f389', '1f38a'] },
+      { keys: ['fireworks', 'sparkler'], codes: ['1f386', '1f387'] },
+
+      // Sports & Outdoor Recreation
+      { keys: ['soccer', 'soccer ball'], codes: ['26bd'] },
+      { keys: ['football', 'american football'], codes: ['1f3c8'] },
+      { keys: ['basketball'], codes: ['1f3c0'] },
+      { keys: ['baseball'], codes: ['26be'] },
+      { keys: ['softball'], codes: ['1f94e'] },
+      { keys: ['tennis', 'racket'], codes: ['1f3be'] },
+      { keys: ['volleyball'], codes: ['1f3d0'] },
+      { keys: ['rugby'], codes: ['1f3c9'] },
+      { keys: ['bowling'], codes: ['1f3b3'] },
+      { keys: ['cricket bat', 'cricket ball'], codes: ['1f3cf'] },
+      { keys: ['hockey', 'ice hockey', 'field hockey'], codes: ['1f3d2', '1f3d1'] },
+      { keys: ['lacrosse'], codes: ['1f94d'] },
+      { keys: ['ping pong', 'table tennis'], codes: ['1f3d3'] },
+      { keys: ['badminton', 'shuttlecock'], codes: ['1f3f8'] },
+      { keys: ['boxing', 'boxing glove'], codes: ['1f94a'] },
+      { keys: ['karate', 'martial arts', 'judo'], codes: ['1f94b'] },
+      { keys: ['golf', 'golf ball'], codes: ['26f3'] },
+      { keys: ['ice skate', 'skating'], codes: ['26f8'] },
+      { keys: ['fishing', 'fishing pole', 'rod'], codes: ['1f3a3'] },
+      { keys: ['diving', 'snorkel', 'scuba'], codes: ['1f93f'] },
+      { keys: ['surfing', 'surfboard'], codes: ['1f3c4'] },
+      { keys: ['ski', 'skiing', 'sled', 'snowboard'], codes: ['1f3bf', '1f6f7', '1f3c2'] },
+      { keys: ['pool', 'billiards', '8 ball'], codes: ['1f3b1'] },
+      { keys: ['trophy', 'cup award'], codes: ['1f3c6'] },
+      { keys: ['medal', 'gold medal'], codes: ['1f3c5', '1f947'] },
+
+      // Weapons, Medieval & Security
+      { keys: ['sword', 'swords', 'dagger', 'blade'], codes: ['2694', '1f5e1'] },
+      { keys: ['shield'], codes: ['1f6e1'] },
+      { keys: ['bow', 'arrow', 'archery'], codes: ['1f3f9'] },
+      { keys: ['boomerang'], codes: ['1fa83'] },
+      { keys: ['bomb', 'dynamite', 'explosive'], codes: ['1f4a3', '1f9e8'] },
+      { keys: ['water gun', 'squirt gun', 'toy gun'], codes: ['1f52b'] },
+      { keys: ['key', 'old key'], codes: ['1f511', '1f5dd'] },
+      { keys: ['lock', 'padlock', 'locked'], codes: ['1f512', '1f513'] },
+
+      // Sky, Space, Weather & Elements
+      { keys: ['sun', 'sunny', 'sunshine'], codes: ['2600', '1f31e', '1f31d'] },
+      { keys: ['moon', 'crescent'], codes: ['1f319', '1f31d', '1f31b'] },
+      { keys: ['star', 'stars', 'sparkle'], codes: ['2b50', '1f31f', '2728'] },
+      { keys: ['rainbow'], codes: ['1f308'] },
+      { keys: ['cloud', 'clouds'], codes: ['2601', '26c5'] },
+      { keys: ['rain', 'rainy'], codes: ['1f327', '2614'] },
+      { keys: ['tornado', 'hurricane', 'cyclone'], codes: ['1f32a', '1f300'] },
+      { keys: ['fire', 'flame', 'bonfire', 'campfire'], codes: ['1f525'] },
+      { keys: ['water', 'droplet', 'drop'], codes: ['1f4a7'] },
+      { keys: ['lightning', 'thunder', 'bolt', 'electricity'], codes: ['26a1'] },
+      { keys: ['snowman'], codes: ['2603', '26c4'] },
+      { keys: ['snowflake', 'snow'], codes: ['2744'] },
+      { keys: ['earth', 'world'], codes: ['1f30d', '1f30e', '1f30f'] },
+      { keys: ['planet', 'saturn'], codes: ['1fa90'] },
+      { keys: ['comet', 'meteor', 'asteroid'], codes: ['2604'] },
+
+      // Buildings, Landmarks & Places
+      { keys: ['house', 'home', 'cottage', 'cabin'], codes: ['1f3e0', '1f3e1', '1f6d6'] },
+      { keys: ['castle', 'palace', 'fortress'], codes: ['1f3f0', '1f3ef'] },
+      { keys: ['building', 'office', 'skyscraper', 'hotel'], codes: ['1f3e2', '1f3e8'] },
+      { keys: ['school', 'university'], codes: ['1f3eb'] },
+      { keys: ['hospital', 'clinic'], codes: ['1f3e5'] },
+      { keys: ['bank'], codes: ['1f3e6'] },
+      { keys: ['store', 'shop', 'supermarket'], codes: ['1f3ea', '1f3ec'] },
+      { keys: ['factory'], codes: ['1f3ed'] },
+      { keys: ['church', 'mosque', 'temple', 'synagogue'], codes: ['26ea', '1f54c', '1f6d5', '1f54d'] },
+      { keys: ['fountain'], codes: ['26f2'] },
+      { keys: ['statue', 'liberty', 'moai'], codes: ['1f5fd', '1f5ff'] },
+      { keys: ['bridge'], codes: ['1f309'] },
+      { keys: ['ferris wheel'], codes: ['1f3a1'] },
+      { keys: ['roller coaster'], codes: ['1f3a2'] },
+      { keys: ['carousel'], codes: ['1f3a0'] },
+
+      // Money, Time & Signs
+      { keys: ['money', 'dollar', 'cash', 'coin', 'gold', 'banknote'], codes: ['1f4b0', '1f4b5', '1fa99'] },
+      { keys: ['credit card', 'card'], codes: ['1f4b3'] },
+      { keys: ['clock', 'watch', 'alarm', 'timer'], codes: ['23f0', '231a', '1f570', '23f1'] },
+      { keys: ['hourglass'], codes: ['231b', '23f3'] },
+      { keys: ['compass'], codes: ['1f9ed'] },
+      { keys: ['flag', 'banner'], codes: ['1f6a9', '1f3c1', '1f3f3'] },
+      { keys: ['sign', 'stop sign', 'warning'], codes: ['1f6d1', '26a0'] },
+
+      // Colored Hearts & Fantasy/Spooky Characters
+      { keys: ['pink heart'], codes: ['1fa77', '1f496', '1f497', '1f495'] },
+      { keys: ['red heart'], codes: ['2764'] },
+      { keys: ['orange heart'], codes: ['1f9e1'] },
+      { keys: ['yellow heart'], codes: ['1f49b'] },
+      { keys: ['green heart'], codes: ['1f49a'] },
+      { keys: ['blue heart', 'light blue heart'], codes: ['1f499', '1fa75'] },
+      { keys: ['purple heart'], codes: ['1f49c'] },
+      { keys: ['black heart'], codes: ['1f5a4'] },
+      { keys: ['white heart'], codes: ['1f90d'] },
+      { keys: ['brown heart'], codes: ['1f90e'] },
+      { keys: ['grey heart', 'gray heart'], codes: ['1fa76'] },
+      { keys: ['broken heart', 'heartbreak'], codes: ['1f494'] },
+      { keys: ['sparkling heart'], codes: ['1f496'] },
+      { keys: ['heart', 'love'], codes: ['2764', '1fa77', '1f496', '1f49c', '1f499', '1f49b', '1f49a'] },
+      { keys: ['ghost', 'spooky'], codes: ['1f47b'] },
+      { keys: ['wizard', 'mage', 'witch'], codes: ['1f9d9', '1f9d9-200d-2640-fe0f'] },
+      { keys: ['fairy'], codes: ['1f9da'] },
+      { keys: ['mermaid', 'merman'], codes: ['1f9dc'] },
+      { keys: ['elf'], codes: ['1f9dd'] },
+      { keys: ['genie'], codes: ['1f9de'] },
+      { keys: ['vampire', 'dracula'], codes: ['1f9db'] },
+      { keys: ['superhero', 'hero'], codes: ['1f9b8'] },
+      { keys: ['angel'], codes: ['1f47c'] },
+      { keys: ['devil', 'imp'], codes: ['1f608', '1f47f'] },
+      { keys: ['alien', 'extraterrestrial'], codes: ['1f47d', '1f47e'] },
+      { keys: ['robot', 'bot', 'android', 'cyborg'], codes: ['1f916'] },
+      { keys: ['skull', 'skeleton'], codes: ['1f480', '2620'] },
+      { keys: ['zombie'], codes: ['1f9df'] },
+      { keys: ['ninja'], codes: ['1f977'] },
+      { keys: ['astronaut'], codes: ['1f9d1-200d-1f680'] },
+      { keys: ['santa'], codes: ['1f385'] },
+      { keys: ['clown'], codes: ['1f921'] },
+      { keys: ['cowboy'], codes: ['1f920'] },
+      { keys: ['detective'], codes: ['1f575'] },
+      { keys: ['pirate'], codes: ['1f3f4-200d-2620-fe0f'] },
+
+      // Explicit Expressions / Faces
+      { keys: ['smile', 'smiley', 'grin'], codes: ['1f604', '1f603', '1f601', '1f60a'] },
+      { keys: ['laugh', 'lol'], codes: ['1f602', '1f923'] },
+      { keys: ['cry', 'crying', 'sad', 'tears'], codes: ['1f622', '1f62d'] },
+      { keys: ['angry', 'mad'], codes: ['1f621', '1f620'] },
+      { keys: ['sleep', 'sleepy', 'zzz'], codes: ['1f634'] },
+      { keys: ['wink'], codes: ['1f609'] },
+      { keys: ['kiss'], codes: ['1f618'] },
+      { keys: ['party', 'celebrate'], codes: ['1f973', '1f389'] },
+      { keys: ['poop'], codes: ['1f4a9'] },
+      { keys: ['100'], codes: ['1f4af'] }
+    ];
+
+    /**
+     * Generates a crisp, recognizable pixel-art emoji of any prompt in ANY browser.
+     * Supports 6+ distinct visual variations per prompt when clicking "Try Again":
+     * - Rotates across matching emoji variants & 3 distinct vector styles
+     *   (Twemoji, OpenMoji, Noto Color Emoji)
+     * - Applies distinct artistic style recipes (pose mirror, vibrant color-way shifts,
+     *   and pixel density tweaks) so every "Try Again" produces a fresh look!
+     */
+    async function fetchGeminiPixelImage(engineeredPrompt, rawSubject = '', variation = 1) {
+      const apiKey = "";
+      const imageEndpoints = [
+        {
+          url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=${apiKey}`,
+          body: {
+            contents: [{ role: 'user', parts: [{ text: engineeredPrompt }] }],
+            generationConfig: {
+              responseModalities: ['IMAGE'],
+              imageConfig: { aspectRatio: '1:1' }
+            }
+          }
+        },
+        {
+          url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-image:generateContent?key=${apiKey}`,
+          body: {
+            contents: [{ role: 'user', parts: [{ text: engineeredPrompt }] }],
+            generationConfig: {
+              responseModalities: ['TEXT', 'IMAGE']
+            }
+          }
+        }
+      ];
+
+      // 1. Try Gemini Image Generation first (active inside Gemini Canvas)
+      for (const endpoint of imageEndpoints) {
+        try {
+          const response = await fetch(endpoint.url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(endpoint.body)
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            const parts = result?.candidates?.[0]?.content?.parts || [];
+            const imagePart = parts.find(
+              (p) => (p.inlineData && p.inlineData.data) || (p.inline_data && p.inline_data.data)
+            );
+            if (imagePart) {
+              const inline = imagePart.inlineData || imagePart.inline_data;
+              const mimeType = inline.mimeType || inline.mime_type || 'image/png';
+              return `data:${mimeType};base64,${inline.data}`;
+            }
+          }
+        } catch (err) {
+          // Continue to universal browser CDN emoji engine
+        }
+      }
+
+      const subject = (rawSubject || state.currentPrompt || 'cat').trim().toLowerCase();
+
+      // 2. Instant Global CDN Emoji Lookup (handles single nouns, colors, noun + accessory, and "X and Y" pairs!)
+      const matchResult = findMatchingEmojiCodes(subject);
+      if (matchResult.primaryCodes.length > 0) {
+        const matchedCodes = matchResult.primaryCodes;
+        const secondaryCodes = matchResult.secondaryCodes || [];
+        const isPairMode = matchResult.isPairMode;
+        const requestedHueShift = matchResult.requestedHueShift;
+
+        const pairLen = isPairMode && secondaryCodes.length > 0 ? Math.max(matchedCodes.length, secondaryCodes.length) : matchedCodes.length;
+        const totalBaseCombos = pairLen * 3;
+        const baseIndex = (variation - 1) % totalBaseCombos;
+        const code = matchedCodes[baseIndex % matchedCodes.length];
+        const secondaryCode = secondaryCodes.length > 0
+          ? secondaryCodes[(isPairMode ? baseIndex : 0) % secondaryCodes.length]
+          : null;
+        const styleIndex = Math.floor(baseIndex / pairLen) % 3;
+        const remixCycle = Math.floor((variation - 1) / totalBaseCombos);
+
+        // Distinct artistic variation recipes across 8+ versions (preserving explicit requested colors!)
+        const variationRecipes = requestedHueShift !== null
+          ? [
+              { flipX: false, hueShift: requestedHueShift, saturate: 1.15, brightness: 1.02 },
+              { flipX: false, hueShift: requestedHueShift, saturate: 1.22, brightness: 1.05 },
+              { flipX: true,  hueShift: requestedHueShift, saturate: 1.18, brightness: 1.02 },
+              { flipX: false, hueShift: requestedHueShift + 10, saturate: 1.25, brightness: 1.04 },
+              { flipX: true,  hueShift: requestedHueShift - 10, saturate: 1.25, brightness: 1.04 },
+              { flipX: false, hueShift: requestedHueShift, saturate: 1.3,  brightness: 1.06 }
+            ]
+          : [
+              { flipX: false, hueShift: 0, saturate: 1.08, brightness: 1.0 },
+              { flipX: false, hueShift: 0, saturate: 1.15, brightness: 1.03 },
+              { flipX: true,  hueShift: 0, saturate: 1.1,  brightness: 1.0 },
+              { flipX: false, hueShift: 24, saturate: 1.25, brightness: 1.04 },
+              { flipX: true,  hueShift: -28, saturate: 1.22, brightness: 1.02 },
+              { flipX: false, hueShift: 55, saturate: 1.2,  brightness: 1.05 },
+              { flipX: true,  hueShift: 140, saturate: 1.25, brightness: 1.02 },
+              { flipX: false, hueShift: -65, saturate: 1.25, brightness: 1.04 }
+            ];
+        const recipeIndex = (variation - 1 + remixCycle) % variationRecipes.length;
+        const recipe = variationRecipes[recipeIndex];
+
+        const dataUrl = await renderEmojiWithOptionalAccessory(code, secondaryCode, isPairMode, styleIndex, recipe);
+        if (dataUrl) return dataUrl;
+      }
+
+      // 3. Iconify 200,000+ Vector & Emoji Search (for specialized nouns/phrases)
+      const colorPrefixes = [
+        'fluent-emoji',
+        'noto',
+        'twemoji',
+        'openmoji',
+        'emojione',
+        'streamline-emojis',
+        'fxemoji'
+      ];
+
+      const stopWords = new Set(['a', 'an', 'the', 'with', 'and', 'of', 'in', 'on', 'cute', 'happy', 'pixel', 'emoji', 'icon', 'retro', 'cool', 'little', 'big']);
+      const words = subject
+        .replace(/[^a-z0-9\s-]/g, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length > 1 && !stopWords.has(w));
+
+      const queries = [subject];
+      if (words.length > 1) {
+        queries.push(words.join(' '));
+        [...words].sort((a, b) => b.length - a.length).forEach((w) => {
+          if (!queries.includes(w)) queries.push(w);
+        });
+      }
+
+      for (const q of queries) {
+        const colorSearchUrl = `https://api.iconify.design/search?query=${encodeURIComponent(q)}&prefixes=${colorPrefixes.join(',')}&limit=24`;
+        const iconName = await pickIconFromSearch(colorSearchUrl, variation);
+        if (iconName) {
+          const svgUrl = `https://api.iconify.design/${iconName}.svg?width=512&height=512`;
+          const dataUrl = await renderSvgUrlToDataUrl(svgUrl, false, variation);
+          if (dataUrl) return dataUrl;
+        }
+
+        const generalSearchUrl = `https://api.iconify.design/search?query=${encodeURIComponent(q)}&limit=24`;
+        const generalIconName = await pickIconFromSearch(generalSearchUrl, variation);
+        if (generalIconName) {
+          const svgUrl = `https://api.iconify.design/${generalIconName}.svg?width=512&height=512`;
+          const dataUrl = await renderSvgUrlToDataUrl(svgUrl, true, variation);
+          if (dataUrl) return dataUrl;
+        }
+      }
+
+      // 4. Final Offline/Fallback Guarantee: Clean pixel emblem (never a random robot!)
+      return synthesizeCustomPixelCharacter(subject, variation);
+    }
+
+    function findMatchingEmojiCodes(subject) {
+      // Normalize common typos like "avocade" -> "avocado", "eith" -> "with", "sunglass" -> "sunglasses"
+      const normalized = subject
+        .replace(/\bavocade\b/g, 'avocado')
+        .replace(/\beith\b/g, 'with')
+        .replace(/\bwit\b/g, 'with')
+        .replace(/\bsunglass\b/g, 'sunglasses')
+        .replace(/\bglass\b/g, 'glasses')
+        .replace(/[^a-z0-9\s-]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const accessoryKeys = new Set(['sunglasses', 'glasses', 'eyeglasses', 'crown', 'hat', 'cap', 'tophat', 'scarf', 'bow', 'sparkle', 'star', 'stars']);
+      const hasCoolAdjective = /\bcool\b/.test(normalized);
+      const isPairPhrase = /\b(and|&|\+)\b/.test(normalized);
+
+      // Detect explicit color modifiers (e.g., "pink", "blue", "purple", "green", "yellow", "orange")
+      const colorHueMap = {
+        pink: -25,
+        magenta: -35,
+        purple: -75,
+        violet: -75,
+        blue: 205,
+        cyan: 175,
+        green: 115,
+        yellow: 48,
+        gold: 42,
+        orange: 24,
+        red: 0
+      };
+      let detectedColor = null;
+      for (const colorWord of Object.keys(colorHueMap)) {
+        if (new RegExp(`\\b${colorWord}\\b`).test(normalized)) {
+          detectedColor = colorWord;
+          break;
+        }
+      }
+
+      const matchedGroups = [];
+
+      for (const entry of EMOJI_LEXICON) {
+        let bestPos = Infinity;
+        let isExact = false;
+        let matchedKeyLen = 0;
+
+        for (const key of entry.keys) {
+          if (normalized === key || normalized === `${key}s` || normalized === `${key}es`) {
+            isExact = true;
+            bestPos = 0;
+            matchedKeyLen = key.length;
+            break;
+          }
+          const regex = new RegExp(`\\b(${key}|${key}s|${key}es)\\b`);
+          const m = regex.exec(normalized);
+          if (m && (m.index < bestPos || (m.index === bestPos && key.length > matchedKeyLen))) {
+            bestPos = m.index;
+            matchedKeyLen = key.length;
+          }
+        }
+
+        if (isExact || bestPos < Infinity) {
+          const primaryKey = entry.keys[0];
+          matchedGroups.push({
+            primaryKey,
+            codes: entry.codes,
+            isExact,
+            pos: bestPos,
+            keyLen: matchedKeyLen,
+            isAccessory: accessoryKeys.has(primaryKey)
+          });
+        }
+      }
+
+      if (matchedGroups.length === 0) {
+        return { primaryCodes: [], secondaryCodes: [], isPairMode: false, requestedHueShift: null };
+      }
+
+      // Exact phrase match takes top priority
+      const exactGroup = matchedGroups.find((g) => g.isExact);
+      if (exactGroup) {
+        return {
+          primaryCodes: exactGroup.codes,
+          secondaryCodes: hasCoolAdjective && exactGroup.primaryKey !== 'sunglasses' ? ['1f576'] : [],
+          isPairMode: false,
+          requestedHueShift: null
+        };
+      }
+
+      // Sort matched nouns by earliest position, preferring longer specific phrases (like "pink heart" over "heart")
+      matchedGroups.sort((a, b) => (a.pos !== b.pos ? a.pos - b.pos : b.keyLen - a.keyLen));
+
+      // Separate core subjects from accessories (so "pink heart eith sunglass" keeps pink heart as the star!)
+      const coreSubjects = matchedGroups.filter((g) => !g.isAccessory);
+      const accessories = matchedGroups.filter((g) => g.isAccessory);
+
+      // Check if the matched primary key already includes the requested color natively (e.g., "pink heart", "green apple")
+      const nativeColorMatched = coreSubjects.length > 0 && detectedColor && coreSubjects[0].primaryKey.includes(detectedColor);
+      const requestedHueShift = (detectedColor && !nativeColorMatched) ? colorHueMap[detectedColor] : null;
+
+      if (coreSubjects.length >= 2 && isPairPhrase) {
+        // e.g., "fruit and knife", "bed and pillow", "butter and knife", "lock and key"
+        return {
+          primaryCodes: coreSubjects[0].codes,
+          secondaryCodes: coreSubjects[1].codes,
+          isPairMode: true,
+          requestedHueShift
+        };
+      }
+
+      if (coreSubjects.length >= 1) {
+        const mainSubject = coreSubjects[0];
+        let accessoryCodes = [];
+        if (accessories.length > 0) {
+          accessoryCodes = accessories[0].codes;
+        } else if (hasCoolAdjective) {
+          accessoryCodes = ['1f576']; // Cool sunglasses overlay!
+        }
+        return {
+          primaryCodes: mainSubject.codes,
+          secondaryCodes: accessoryCodes,
+          isPairMode: false,
+          requestedHueShift
+        };
+      }
+
+      // Only accessories were typed (e.g., "sunglasses" or "crown")
+      return {
+        primaryCodes: accessories[0].codes,
+        secondaryCodes: [],
+        isPairMode: false,
+        requestedHueShift
+      };
+    }
+
+    async function loadCdnEmojiImage(code, preferredStyleIndex = 0) {
+      const cleanCode = code.toLowerCase();
+      const openMojiCode = code.toUpperCase();
+      const notoCode = code.toLowerCase().replace(/-/g, '_');
+
+      const cdnCandidates = [
+        `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${cleanCode}.svg`,
+        `https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji@15.0.0/color/svg/${openMojiCode}.svg`,
+        `https://cdn.jsdelivr.net/gh/googlefonts/noto-emoji@v2.042/svg/emoji_u${notoCode}.svg`
+      ];
+
+      const ordered = [
+        cdnCandidates[preferredStyleIndex % 3],
+        cdnCandidates[(preferredStyleIndex + 1) % 3],
+        cdnCandidates[(preferredStyleIndex + 2) % 3]
+      ];
+
+      for (const url of ordered) {
+        try {
+          const img = await loadImageWithTimeout(url, 6000);
+          if (img) return img;
+        } catch (e) {
+          // Try next CDN style
+        }
+      }
+      return null;
+    }
+
+    async function renderEmojiWithOptionalAccessory(primaryCode, secondaryCode, isPairMode, styleIndex, recipe) {
+      const primaryImg = await loadCdnEmojiImage(primaryCode, styleIndex);
+      if (!primaryImg) return null;
+
+      let secondaryImg = null;
+      if (secondaryCode) {
+        secondaryImg = await loadCdnEmojiImage(secondaryCode, 0);
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, 512, 512);
+
+      ctx.save();
+      if (recipe) {
+        const filters = [];
+        if (recipe.hueShift) filters.push(`hue-rotate(${recipe.hueShift}deg)`);
+        if (recipe.saturate && recipe.saturate !== 1) filters.push(`saturate(${recipe.saturate})`);
+        if (recipe.brightness && recipe.brightness !== 1) filters.push(`brightness(${recipe.brightness})`);
+        if (filters.length > 0 && 'filter' in ctx) {
+          ctx.filter = filters.join(' ');
+        }
+        if (recipe.flipX) {
+          ctx.translate(512, 0);
+          ctx.scale(-1, 1);
+        }
+      }
+
+      if (secondaryImg && isPairMode) {
+        // Composite two objects together cleanly (e.g., "butter and knife")
+        ctx.drawImage(primaryImg, 28, 110, 275, 275);
+        ctx.drawImage(secondaryImg, 215, 75, 265, 265);
+      } else {
+        ctx.drawImage(primaryImg, 32, 32, 448, 448);
+        if (secondaryImg) {
+          // Overlay accessory (e.g., sunglasses or crown) directly onto the subject!
+          if (secondaryCode === '1f576') {
+            ctx.drawImage(secondaryImg, 136, 132, 240, 240);
+          } else if (secondaryCode === '1f451' || secondaryCode === '1f3a9' || secondaryCode === '1f9e2') {
+            ctx.drawImage(secondaryImg, 156, 4, 200, 200);
+          } else {
+            ctx.drawImage(secondaryImg, 270, 265, 195, 195);
+          }
+        }
+      }
+
+      ctx.restore();
+      return canvas.toDataURL('image/png');
+    }
+
+    function synthesizeCustomPixelCharacter(subject, variation = 1) {
+      let hash = variation * 2654435761;
+      for (let i = 0; i < subject.length; i++) {
+        hash = ((hash << 5) - hash + subject.charCodeAt(i)) | 0;
+      }
+      const palettes = [
+        ['#FF5D8F', '#FFD93D'],
+        ['#38BDF8', '#4ADE80'],
+        ['#A855F7', '#FFD93D'],
+        ['#FF922B', '#38BDF8']
+      ];
+      const [bgCol, starCol] = palettes[Math.abs(hash) % palettes.length];
+      const letter = (subject.replace(/[^a-zA-Z0-9]/g, '')[0] || 'P').toUpperCase();
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, 512, 512);
+
+      // Draw a clean pixel badge with the prompt's initial instead of a random robot creature
+      ctx.fillStyle = bgCol;
+      ctx.beginPath();
+      ctx.roundRect(64, 64, 384, 384, 72);
+      ctx.fill();
+
+      ctx.fillStyle = starCol;
+      ctx.font = 'bold 230px "Silkscreen", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(letter, 256, 272);
+
+      return canvas.toDataURL('image/png');
+    }
+
+    async function pickIconFromSearch(searchUrl, variation = 1) {
+      try {
+        const res = await fetch(searchUrl);
+        if (!res.ok) return null;
+        const data = await res.json();
+        const icons = Array.isArray(data?.icons) ? data.icons : [];
+        if (icons.length === 0) return null;
+
+        // Pick up to 12 different matching variations when the user clicks "Try Again"
+        const index = (variation - 1) % Math.min(icons.length, 12);
+        return icons[index];
+      } catch (err) {
+        return null;
+      }
+    }
+
+    /**
+     * Fetches a crisp transparent SVG from Iconify, colorizes monochrome icons with a
+     * vibrant palette if needed, and rasterizes it cleanly onto a 512x512 canvas.
+     */
+    async function renderSvgUrlToDataUrl(svgUrl, allowColorize = false, variation = 1) {
+      try {
+        const res = await fetch(svgUrl);
+        if (!res.ok) return null;
+        let svgText = await res.text();
+        if (!svgText || !svgText.includes('<svg')) return null;
+
+        // If it's a monochrome icon using currentColor, give it a bright cheerful fill per variation!
+        if (allowColorize && svgText.includes('currentColor')) {
+          const brightColors = ['#FF5D8F', '#FF922B', '#38BDF8', '#A855F7', '#22C55E', '#EF4444', '#F59E0B', '#EC4899'];
+          const chosen = brightColors[(variation - 1) % brightColors.length];
+          svgText = svgText.replace(/currentColor/g, chosen);
+        }
+
+        const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+        const objectUrl = URL.createObjectURL(svgBlob);
+
+        try {
+          const img = await loadImageWithTimeout(objectUrl, 8000);
+          const canvas = document.createElement('canvas');
+          canvas.width = 512;
+          canvas.height = 512;
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, 512, 512);
+          if (variation % 2 === 0) {
+            ctx.translate(512, 0);
+            ctx.scale(-1, 1);
+          }
+          ctx.drawImage(img, 0, 0, 512, 512);
+          return canvas.toDataURL('image/png');
+        } finally {
+          URL.revokeObjectURL(objectUrl);
+        }
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function loadImageWithTimeout(src, timeoutMs = 10000) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        const timer = setTimeout(() => {
+          img.src = '';
+          reject(new Error('Image load timed out'));
+        }, timeoutMs);
+
+        img.onload = () => {
+          clearTimeout(timer);
+          if (img.naturalWidth > 0) {
+            resolve(img);
+          } else {
+            reject(new Error('Empty image'));
+          }
+        };
+        img.onerror = (e) => {
+          clearTimeout(timer);
+          reject(e);
+        };
+        img.src = src;
+      });
+    }
+
+    // =========================================================================
+    // 1. GLOBAL APP STATE & CONSTANTS
+    // =========================================================================
+    const state = {
+      currentPrompt: '',
+      variationCount: 1,
+      isGenerating: false,
+      transparentBg: true,
+      pixelGridSize: 32,
+      rawImageElement: null,
+      recentCreations: [],
+      loadingTimer: null,
+      progressTimer: null
+    };
+
+    const RANDOM_IDEAS = [
+      'happy orange tabby cat',
+      'blooming red rose',
+      'golden retriever puppy',
+      'cute yellow rubber duck',
+      'monarch butterfly',
+      'smiling avocado with sunglasses',
+      'cozy strawberry milk carton',
+      'retro arcade space rocket',
+      'cute frog wearing a crown',
+      'rainbow unicorn head',
+      'hot pepperoni pizza slice',
+      'sleepy panda eating bamboo',
+      'sparkling crystal potion bottle',
+      'kawaii boba milk tea',
+      'friendly little green dinosaur'
+    ];
+
+    const LOADING_MESSAGES = [
+      'Mixing colorful pixels...',
+      'Sharpening 8-bit edges...',
+      'Choosing vibrant palette...',
+      'Inking crisp outlines...',
+      'Polishing your pixel emoji...'
+    ];
+
+    const VARIATION_CUES = [
+      'classic cute front-facing kawaii emoji icon',
+      'playful tilted 3/4 view expressive character icon',
+      'bold retro 16-bit arcade badge icon with bright highlights',
+      'chibi-style adorable rounded icon with big expressive features',
+      'vibrant pop-art pixel sticker icon with rich contrast'
+    ];
+
+    // =========================================================================
+    // 2. HOMEPAGE STARTER PACK (16x16 PIXEL MATRICES)
+    // =========================================================================
+    const STARTER_EMOJIS = [
+      {
+        id: 'cat',
+        name: 'Cat',
+        prompt: 'cute orange cat',
+        tag: 'ANIMAL',
+        bg: 'bg-sunny/30',
+        palette: { K: '#18181B', O: '#FF922B', L: '#FFD93D', P: '#FF8FA3', W: '#FFFFFF' },
+        grid: [
+          '................',
+          '..KK........KK..',
+          '.KOOK......KOOK.',
+          '.KPOOKKKKKKOOPK.',
+          '.KOOOOOOOOOOOOK.',
+          'KOOOOOOOOOOOOOOK',
+          'KOOKKOOOOOOKKOOK',
+          'KOOKWOOOOOOKWOOK',
+          'KOOOOOOKKOOOOOOK',
+          'KPPPOOOOOOOOPPPK',
+          '.KOOOOOKKOOOOOK.',
+          '..KOOOOOOOOOOK..',
+          '...KKKKKKKKKK...',
+          '................',
+          '................',
+          '................'
+        ]
+      },
+      {
+        id: 'dog',
+        name: 'Dog',
+        prompt: 'happy golden puppy',
+        tag: 'ANIMAL',
+        bg: 'bg-tangerine/25',
+        palette: { K: '#18181B', B: '#92400E', T: '#F59E0B', C: '#FDE68A', P: '#FF5D8F', W: '#FFFFFF' },
+        grid: [
+          '................',
+          '...KKKK..KKKK...',
+          '..KBBBBKKBBBBK..',
+          '.KBBBTTTTTTBBBK.',
+          '.KBBTTTTTTTTBBK.',
+          '.KBTTKKTTKKTTBK.',
+          '.KBTTWKTTWKTTBK.',
+          '.KTTTCCCCCCCTTK.',
+          '..KTTCCKKCCCTK..',
+          '..KTTCCCCCCCTK..',
+          '...KTTCPPCCTK...',
+          '....KKKPPKKK....',
+          '.......KK.......',
+          '................',
+          '................',
+          '................'
+        ]
+      },
+      {
+        id: 'duck',
+        name: 'Duck',
+        prompt: 'cute yellow duck',
+        tag: 'BIRD',
+        bg: 'bg-skyPop/25',
+        palette: { K: '#18181B', Y: '#FFD93D', L: '#FEF08A', O: '#FF922B', W: '#FFFFFF' },
+        grid: [
+          '................',
+          '.....KKKKKK.....',
+          '....KYYYYYYK....',
+          '...KYYYYYYYYK...',
+          '...KYYKKYYYYK...',
+          '..KKKKWKYYYYK...',
+          '.KOOOOOKYYYYK...',
+          '..KKKKKYYYYYKK..',
+          '.....KYYYYYYYYK.',
+          '....KYYYLLLLYYYK',
+          '....KYYYYYYYYYYK',
+          '.....KYYYYYYYYK.',
+          '......KKKKKKKK..',
+          '......KO....KO..',
+          '.....KKK...KKK..',
+          '................'
+        ]
+      },
+      {
+        id: 'rose',
+        name: 'Rose',
+        prompt: 'red blooming rose',
+        tag: 'FLOWER',
+        bg: 'bg-electricPink/25',
+        palette: { K: '#18181B', R: '#FF2E63', D: '#BE123C', L: '#FF8FA3', G: '#22C55E', E: '#15803D' },
+        grid: [
+          '................',
+          '.....KKKKKK.....',
+          '....KRRRRRRK....',
+          '...KRRDRRDDRK...',
+          '...KRRRRRRRRK...',
+          '...KDRRLLRRDK...',
+          '....KRRRRRRK....',
+          '.....KKKKKK.....',
+          '....KGGKKGGK....',
+          '...KGGGKKEGGK...',
+          '....KKKGGKKK....',
+          '......KGGK......',
+          '......KGGK......',
+          '......KGGK......',
+          '.......KK.......',
+          '................'
+        ]
+      },
+      {
+        id: 'butterfly',
+        name: 'Butterfly',
+        prompt: 'colorful butterfly',
+        tag: 'NATURE',
+        bg: 'bg-grapePop/25',
+        palette: { K: '#18181B', P: '#A855F7', B: '#38BDF8', Y: '#FFD93D', W: '#FFFFFF' },
+        grid: [
+          '................',
+          '....KK....KK....',
+          '.....K....K.....',
+          '.KKKKKK..KKKKKK.',
+          'KBBWBBKKKKBBWBBK',
+          'KBBBBBKYYKBBBBBK',
+          'KPPPPPKYYKPPPPPK',
+          '.KKKKKKYYKKKKKK.',
+          '.KPPPPKYYKPPPPK.',
+          'KPPYPPKYYKPPYPPK',
+          'KPPPPPKYYKPPPPPK',
+          '.KKKKKK..KKKKKK.',
+          '................',
+          '................',
+          '................',
+          '................'
+        ]
+      },
+      {
+        id: 'pizza',
+        name: 'Pizza',
+        prompt: 'cheesy pepperoni pizza slice',
+        tag: 'FOOD',
+        bg: 'bg-sunny/30',
+        palette: { K: '#18181B', C: '#D97706', Y: '#FFD93D', R: '#EF4444', G: '#22C55E' },
+        grid: [
+          '................',
+          '..KKKKKKKKKKKK..',
+          '.KCCCCCCCCCCCCK.',
+          '..KKKKKKKKKKKK..',
+          '..KYYYYRRYYYYK..',
+          '...KYYYYYYYYK...',
+          '...KYYGYYRYYK...',
+          '....KYYYYYYK....',
+          '....KYYRYYYK....',
+          '.....KYYYYK.....',
+          '.....KYYGYK.....',
+          '......KYYK......',
+          '......KYYK......',
+          '.......KK.......',
+          '................',
+          '................'
+        ]
+      },
+      {
+        id: 'rocket',
+        name: 'Rocket',
+        prompt: 'retro space rocket',
+        tag: 'SPACE',
+        bg: 'bg-skyPop/25',
+        palette: { K: '#18181B', R: '#FF5D8F', W: '#FFFFFF', B: '#38BDF8', Y: '#FFD93D', O: '#FF922B' },
+        grid: [
+          '................',
+          '.......KK.......',
+          '......KRRK......',
+          '.....KRRRRK.....',
+          '.....KWWWWK.....',
+          '....KWWBBWWK....',
+          '....KWWBBWWK....',
+          '....KWWWWWWK....',
+          '...KKWWWWWWKK...',
+          '..KRRKWWWWKRRK..',
+          '.KRRRKWWWWKRRRK.',
+          '.KKKK.KKKK.KKKK.',
+          '......KYYK......',
+          '.....KOOOOK.....',
+          '......KYYK......',
+          '................'
+        ]
+      },
+      {
+        id: 'heart',
+        name: 'Heart',
+        prompt: 'sparkling pixel heart',
+        tag: 'LOVE',
+        bg: 'bg-electricPink/25',
+        palette: { K: '#18181B', R: '#FF2E63', L: '#FF8FA3', W: '#FFFFFF' },
+        grid: [
+          '................',
+          '................',
+          '..KKKK....KKKK..',
+          '.KRRRRK..KRRRRK.',
+          'KRRWLRRKKRRRRRRK',
+          'KRRWLRRRRRRRRRRK',
+          'KRRRRRRRRRRRRRRK',
+          'KRRRRRRRRRRRRRRK',
+          '.KRRRRRRRRRRRRK.',
+          '..KRRRRRRRRRRK..',
+          '...KRRRRRRRRK...',
+          '....KRRRRRRK....',
+          '.....KRRRRK.....',
+          '......KRRK......',
+          '.......KK.......',
+          '................'
+        ]
+      },
+      {
+        id: 'ghost',
+        name: 'Ghost',
+        prompt: 'cute happy pixel ghost',
+        tag: 'SPOOKY',
+        bg: 'bg-grapePop/20',
+        palette: { K: '#18181B', W: '#FFFFFF', S: '#E2E8F0', P: '#FF8FA3' },
+        grid: [
+          '................',
+          '.....KKKKKK.....',
+          '....KWWWWWWK....',
+          '...KWWWWWWWWK...',
+          '..KWWWWWWWWWWK..',
+          '..KWWKKWWKKWWK..',
+          '..KWWKKWWKKWWK..',
+          '..KWPWWWWWWPWK..',
+          '..KWWWWKKWWWWK..',
+          '..KWWWWWWWWWWK..',
+          '..KWWWWWWWWSSK..',
+          '..KWWWWWWWWSSK..',
+          '..KWKKWWWWKKWK..',
+          '..K..KK..KK..K..',
+          '................',
+          '................'
+        ]
+      },
+      {
+        id: 'berry',
+        name: 'Berry',
+        prompt: 'sweet red strawberry',
+        tag: 'FRUIT',
+        bg: 'bg-mintFresh/25',
+        palette: { K: '#18181B', G: '#22C55E', R: '#FF2E63', Y: '#FFD93D', W: '#FFFFFF' },
+        grid: [
+          '................',
+          '.......KK.......',
+          '....KKKKKKKK....',
+          '...KGGGGGGGGK...',
+          '..KKGGGGGGGGKK..',
+          '.KRRRRRRRRRRRRK.',
+          'KRRWRRYRRRRRYRRK',
+          'KRRRRRRRRRRRRRRK',
+          'KRRYRRRRRYRRRRRK',
+          '.KRRRRRRRRRRRRK.',
+          '.KRRYRRRRRYRRRK.',
+          '..KRRRRRRRRRRK..',
+          '...KRRYRRYRRK...',
+          '....KRRRRRRK....',
+          '.....KKKKKK.....',
+          '................'
+        ]
+      }
+    ];
+
+    /**
+     * Renders a 16x16 pixel matrix onto a crisp offscreen canvas
+     */
+    function buildShowcaseCanvas(item, size = 256) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, size, size);
+
+      const cell = size / 16;
+      for (let y = 0; y < 16; y++) {
+        const row = item.grid[y] || '';
+        for (let x = 0; x < 16; x++) {
+          const ch = row[x];
+          const color = item.palette[ch];
+          if (color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x * cell, y * cell, cell, cell);
+          }
+        }
+      }
+      return canvas;
+    }
+
+    function drawDirectToMainCanvas(sourceCanvas) {
+      const mainCanvas = document.getElementById('emoji-canvas');
+      if (!mainCanvas) return;
+      mainCanvas.width = 512;
+      mainCanvas.height = 512;
+      const ctx = mainCanvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, 512, 512);
+
+      if (!state.transparentBg) {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, 512, 512);
+      }
+      ctx.drawImage(sourceCanvas, 0, 0, 512, 512);
+      document.getElementById('grid-size-badge').textContent = '16×16 PX';
+    }
+
+    function renderShowcaseGallery() {
+      const grid = document.getElementById('showcase-grid');
+      if (!grid) return;
+      grid.innerHTML = '';
+
+      STARTER_EMOJIS.forEach((item) => {
+        const spriteCanvas = buildShowcaseCanvas(item, 256);
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = `btn-brutal ${item.bg} hover:bg-white border-4 border-inkBlack rounded-2xl p-3 sm:p-4 shadow-brutal flex flex-col items-center text-center cursor-pointer group`;
+        card.onclick = () => openShowcaseEmoji(item, spriteCanvas);
+
+        const previewWrap = document.createElement('div');
+        previewWrap.className = 'w-full aspect-square checkerboard border-3 border-inkBlack rounded-xl p-2.5 sm:p-3 mb-2.5 sm:mb-3 flex items-center justify-center overflow-hidden';
+
+        const img = document.createElement('img');
+        img.src = spriteCanvas.toDataURL('image/png');
+        img.alt = item.name;
+        img.className = 'w-full h-full object-contain pixelated group-hover:scale-110 transition-transform duration-150';
+        previewWrap.appendChild(img);
+
+        const tag = document.createElement('span');
+        tag.className = 'font-pixel text-[10px] font-bold bg-white border-2 border-inkBlack px-2 py-0.5 rounded-md mb-1';
+        tag.textContent = item.tag;
+
+        const title = document.createElement('span');
+        title.className = 'font-pixel text-xs sm:text-sm font-bold text-inkBlack';
+        title.textContent = item.name;
+
+        card.appendChild(previewWrap);
+        card.appendChild(tag);
+        card.appendChild(title);
+        grid.appendChild(card);
+      });
+    }
+
+    function openShowcaseEmoji(item, spriteCanvas) {
+      state.currentPrompt = item.prompt;
+      state.variationCount = 1;
+      state.rawImageElement = spriteCanvas;
+
+      const input = document.getElementById('prompt-input');
+      if (input) input.value = item.prompt;
+      document.getElementById('clear-input-btn').classList.remove('hidden');
+
+      document.getElementById('stage-prompt-title').textContent = `"${item.name}"`;
+      document.getElementById('result-headline').textContent = `${item.name} Pixel Emoji`;
+      const badge = document.getElementById('variation-badge');
+      badge.textContent = 'Starter Classic';
+      badge.classList.remove('hidden');
+
+      const stage = document.getElementById('result-stage');
+      stage.classList.remove('hidden');
+      document.getElementById('loading-panel').classList.add('hidden');
+      document.getElementById('loaded-panel').classList.remove('hidden');
+
+      drawDirectToMainCanvas(spriteCanvas);
+      stage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // =========================================================================
+    // 3. USER INTERACTION HANDLERS & GENERATION ORCHESTRATOR
+    // =========================================================================
+    function handleGenerateSubmit(event) {
+      if (event) event.preventDefault();
+      const input = document.getElementById('prompt-input');
+      const prompt = (input?.value || '').trim();
+      if (!prompt) {
+        showToast('✏️ Type something first (e.g., cat, rose, rocket)!', 'warning');
+        if (input) input.focus();
+        return;
+      }
+      if (input) input.blur();
+      state.variationCount = 1;
+      generatePixelEmoji(prompt, 1);
+    }
+
+    function quickGenerate(promptText) {
+      const input = document.getElementById('prompt-input');
+      if (input) {
+        input.value = promptText;
+        input.blur();
+        document.getElementById('clear-input-btn')?.classList.remove('hidden');
+      }
+      state.variationCount = 1;
+      generatePixelEmoji(promptText, 1);
+    }
+
+    function tryAgainVariation() {
+      const input = document.getElementById('prompt-input');
+      const prompt = (state.currentPrompt || input?.value || '').trim();
+      if (!prompt) {
+        showToast('✏️ Enter a prompt first!', 'warning');
+        return;
+      }
+      state.variationCount = (state.variationCount || 1) + 1;
+      generatePixelEmoji(prompt, state.variationCount);
+    }
+
+    function pickRandomIdea() {
+      const choice = RANDOM_IDEAS[Math.floor(Math.random() * RANDOM_IDEAS.length)];
+      quickGenerate(choice);
+    }
+
+    function clearPromptInput() {
+      const input = document.getElementById('prompt-input');
+      const clearBtn = document.getElementById('clear-input-btn');
+      if (input) {
+        input.value = '';
+        input.focus();
+      }
+      if (clearBtn) clearBtn.classList.add('hidden');
+    }
+
+    function resetToHome(event) {
+      if (event) event.preventDefault();
+      clearPromptInput();
+      const stage = document.getElementById('result-stage');
+      if (stage) stage.classList.add('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    async function generatePixelEmoji(promptText, variation = 1) {
+      if (state.isGenerating) return;
+      state.isGenerating = true;
+      state.currentPrompt = promptText;
+
+      const generateBtn = document.getElementById('generate-btn');
+      const stage = document.getElementById('result-stage');
+      const loadingPanel = document.getElementById('loading-panel');
+      const loadedPanel = document.getElementById('loaded-panel');
+      const variationBadge = document.getElementById('variation-badge');
+
+      if (generateBtn) generateBtn.disabled = true;
+      if (stage) stage.classList.remove('hidden');
+      if (loadingPanel) loadingPanel.classList.remove('hidden');
+      if (loadedPanel) loadedPanel.classList.add('hidden');
+
+      document.getElementById('stage-prompt-title').textContent = `"${promptText}"`;
+      if (variationBadge) {
+        variationBadge.textContent = `Version #${variation}`;
+        variationBadge.classList.remove('hidden');
+      }
+
+      stage?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      startLoadingAnimations();
+
+      try {
+        const cue = VARIATION_CUES[(variation - 1) % VARIATION_CUES.length];
+        const engineeredPrompt = `16-bit pixel art emoji icon of ${promptText}, ${cue}, centered single object, bold crisp dark outline, flat solid vibrant colors, no gradients, no anti-aliasing, isolated on pure solid #FFFFFF white background`;
+
+        const imageDataUrl = await fetchGeminiPixelImage(engineeredPrompt, promptText, variation);
+        const imgEl = await loadImageElement(imageDataUrl);
+
+        state.rawImageElement = imgEl;
+        stopLoadingAnimations(true);
+
+        document.getElementById('result-headline').textContent = `${capitalizeTitle(promptText)} Emoji`;
+        if (loadingPanel) loadingPanel.classList.add('hidden');
+        if (loadedPanel) loadedPanel.classList.remove('hidden');
+
+        renderQuantizedEmoji();
+
+        const mainCanvas = document.getElementById('emoji-canvas');
+        if (mainCanvas) {
+          addToRecentCreations(promptText, mainCanvas.toDataURL('image/png'), imgEl);
+        }
+      } catch (err) {
+        stopLoadingAnimations(false);
+        if (loadingPanel) loadingPanel.classList.add('hidden');
+        showToast('⚠️ Could not find a pixel icon for that phrase — try simpler words!', 'error');
+      } finally {
+        state.isGenerating = false;
+        if (generateBtn) generateBtn.disabled = false;
+      }
+    }
+
+    // =========================================================================
+    // 5. PIXEL QUANTIZATION, PALETTE SNAP & OUTLINE RENDERING
+    // =========================================================================
+    function renderQuantizedEmoji() {
+      if (!state.rawImageElement) return;
+      if (state.rawImageElement instanceof HTMLCanvasElement) {
+        drawDirectToMainCanvas(state.rawImageElement);
+        return;
+      }
+
+      const gridSize = state.pixelGridSize;
+      const srcW = state.rawImageElement.naturalWidth || state.rawImageElement.width || 512;
+      const srcH = state.rawImageElement.naturalHeight || state.rawImageElement.height || 512;
+
+      // Step 1: Draw full-resolution source onto working canvas
+      const fullCanvas = document.createElement('canvas');
+      fullCanvas.width = srcW;
+      fullCanvas.height = srcH;
+      const fCtx = fullCanvas.getContext('2d', { willReadFrequently: true });
+      fCtx.imageSmoothingEnabled = false;
+      fCtx.drawImage(state.rawImageElement, 0, 0, srcW, srcH);
+
+      const fullImgData = fCtx.getImageData(0, 0, srcW, srcH);
+      const fullData = fullImgData.data;
+
+      // Only run white-background flood fill if corners are actually opaque (e.g. non-transparent photos)
+      const topLeftAlpha = fullData[3];
+      const topRightAlpha = fullData[(srcW - 1) * 4 + 3];
+      if (topLeftAlpha > 200 && topRightAlpha > 200) {
+        removeOuterBackgroundFloodFill(fullData, srcW, srcH);
+        fCtx.putImageData(fullImgData, 0, 0);
+      }
+
+      // Step 2: Find tight non-transparent bounding box of the subject
+      let minX = srcW, minY = srcH, maxX = -1, maxY = -1;
+      for (let y = 0; y < srcH; y++) {
+        for (let x = 0; x < srcW; x++) {
+          const alpha = fullData[(y * srcW + x) * 4 + 3];
+          if (alpha > 128) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+
+      // Fallback if image was completely empty
+      if (maxX < minX || maxY < minY) {
+        minX = 0; minY = 0; maxX = srcW - 1; maxY = srcH - 1;
+      }
+
+      const boxW = maxX - minX + 1;
+      const boxH = maxY - minY + 1;
+      const maxDim = Math.max(boxW, boxH);
+      // Add ~10% clean square margin so a 1px dark outline fits comfortably
+      const paddedSize = Math.ceil(maxDim * 1.14);
+      const offsetX = Math.floor((paddedSize - boxW) / 2);
+      const offsetY = Math.floor((paddedSize - boxH) / 2);
+
+      const croppedSquare = document.createElement('canvas');
+      croppedSquare.width = paddedSize;
+      croppedSquare.height = paddedSize;
+      const cCtx = croppedSquare.getContext('2d');
+      cCtx.imageSmoothingEnabled = false;
+      cCtx.drawImage(
+        fullCanvas,
+        minX, minY, boxW, boxH,
+        offsetX, offsetY, boxW, boxH
+      );
+
+      // Step 3: Sharp center-pixel sampling onto N x N grid (NO bilinear smoothing!)
+      const smallCanvas = document.createElement('canvas');
+      smallCanvas.width = gridSize;
+      smallCanvas.height = gridSize;
+      const sCtx = smallCanvas.getContext('2d', { willReadFrequently: true });
+      sCtx.imageSmoothingEnabled = false;
+      sCtx.drawImage(croppedSquare, 0, 0, gridSize, gridSize);
+
+      const imgData = sCtx.getImageData(0, 0, gridSize, gridSize);
+      const data = imgData.data;
+
+      // Hard-threshold alpha so there are zero semi-transparent blurry edges
+      for (let i = 0; i < data.length; i += 4) {
+        data[i + 3] = data[i + 3] >= 128 ? 255 : 0;
+      }
+
+      // Step 4: K-Means color quantization for bold, solid, mud-free pixel colors
+      quantizeToCrispPalette(data, 20);
+
+      // Step 5: Crisp 1px dark outline (#18181B) reinforcement around silhouette
+      applyCrispPixelOutline(data, gridSize, gridSize);
+
+      // If user toggled Transparent BG OFF, fill transparent cells with pure white
+      if (!state.transparentBg) {
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i + 3] === 0) {
+            data[i] = 255;
+            data[i + 1] = 255;
+            data[i + 2] = 255;
+            data[i + 3] = 255;
+          }
+        }
+      }
+
+      sCtx.putImageData(imgData, 0, 0);
+
+      // Step 6: Upscale onto 512x512 canvas with nearest-neighbor crisp edges
+      const mainCanvas = document.getElementById('emoji-canvas');
+      mainCanvas.width = 512;
+      mainCanvas.height = 512;
+      const mCtx = mainCanvas.getContext('2d');
+      mCtx.imageSmoothingEnabled = false;
+      mCtx.clearRect(0, 0, 512, 512);
+      mCtx.drawImage(smallCanvas, 0, 0, 512, 512);
+
+      document.getElementById('grid-size-badge').textContent = `${gridSize}×${gridSize} PX`;
+    }
+
+    /**
+     * K-Means palette quantization + vibrancy boost so every pixel snaps to a
+     * clean, flat, high-contrast color instead of blurry averaged tones.
+     */
+    function quantizeToCrispPalette(data, maxColors = 20) {
+      const opaqueIndices = [];
+      const pixels = [];
+
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] === 255) {
+          opaqueIndices.push(i);
+          pixels.push([data[i], data[i + 1], data[i + 2]]);
+        }
+      }
+
+      if (pixels.length === 0) return;
+
+      const k = Math.min(maxColors, pixels.length);
+      // Deterministic evenly-spaced initial centroids for consistent results
+      const centroids = [];
+      const step = Math.max(1, Math.floor(pixels.length / k));
+      for (let c = 0; c < k; c++) {
+        const p = pixels[Math.min(c * step, pixels.length - 1)];
+        centroids.push([p[0], p[1], p[2]]);
+      }
+
+      const assignments = new Int32Array(pixels.length);
+
+      // Run 6 fast K-Means iterations
+      for (let iter = 0; iter < 6; iter++) {
+        const sumR = new Float64Array(k);
+        const sumG = new Float64Array(k);
+        const sumB = new Float64Array(k);
+        const counts = new Int32Array(k);
+
+        for (let pIdx = 0; pIdx < pixels.length; pIdx++) {
+          const [r, g, b] = pixels[pIdx];
+          let bestC = 0;
+          let bestDist = Infinity;
+
+          for (let c = 0; c < k; c++) {
+            const dr = r - centroids[c][0];
+            const dg = g - centroids[c][1];
+            const db = b - centroids[c][2];
+            const dist = dr * dr + dg * dg + db * db;
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestC = c;
+            }
+          }
+
+          assignments[pIdx] = bestC;
+          sumR[bestC] += r;
+          sumG[bestC] += g;
+          sumB[bestC] += b;
+          counts[bestC]++;
+        }
+
+        for (let c = 0; c < k; c++) {
+          if (counts[c] > 0) {
+            centroids[c][0] = Math.round(sumR[c] / counts[c]);
+            centroids[c][1] = Math.round(sumG[c] / counts[c]);
+            centroids[c][2] = Math.round(sumB[c] / counts[c]);
+          }
+        }
+      }
+
+      // Snap near-black colors to pure #18181B ink and apply quantized palette
+      for (let pIdx = 0; pIdx < pixels.length; pIdx++) {
+        const idx = opaqueIndices[pIdx];
+        let [r, g, b] = centroids[assignments[pIdx]];
+
+        if (r < 52 && g < 52 && b < 58) {
+          r = 24; g = 24; b = 27;
+        }
+
+        data[idx] = r;
+        data[idx + 1] = g;
+        data[idx + 2] = b;
+      }
+    }
+
+    /**
+     * Adds a razor-sharp 1px dark outline (#18181B) around any opaque sprite pixel
+     * touching transparency so every emoji pops cleanly like a classic 16-bit icon.
+     */
+    function applyCrispPixelOutline(data, width, height) {
+      const isOpaque = new Uint8Array(width * height);
+      for (let i = 0; i < width * height; i++) {
+        isOpaque[i] = data[i * 4 + 3] === 255 ? 1 : 0;
+      }
+
+      const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+      for (let y = 1; y < height - 1; y++) {
+        for (let x = 1; x < width - 1; x++) {
+          const pos = y * width + x;
+          if (isOpaque[pos]) continue;
+
+          let touchesSubject = false;
+          for (let d = 0; d < dirs.length; d++) {
+            const nx = x + dirs[d][0];
+            const ny = y + dirs[d][1];
+            if (isOpaque[ny * width + nx]) {
+              touchesSubject = true;
+              break;
+            }
+          }
+
+          if (touchesSubject) {
+            const idx = pos * 4;
+            data[idx] = 24;
+            data[idx + 1] = 24;
+            data[idx + 2] = 27;
+            data[idx + 3] = 255;
+          }
+        }
+      }
+    }
+
+    /**
+     * Flood-fills from all 4 border edges to remove solid light/uniform backgrounds
+     * while preserving white eyes, highlights, or teeth inside the emoji!
+     */
+    function removeOuterBackgroundFloodFill(data, width, height) {
+      const visited = new Uint8Array(width * height);
+      const queue = [];
+
+      // Sample all 4 corners to handle slight background gradients cleanly
+      const corners = [
+        0,
+        (width - 1) * 4,
+        ((height - 1) * width) * 4,
+        ((height - 1) * width + (width - 1)) * 4
+      ];
+      let sumR = 0, sumG = 0, sumB = 0;
+      corners.forEach(cIdx => {
+        sumR += data[cIdx];
+        sumG += data[cIdx + 1];
+        sumB += data[cIdx + 2];
+      });
+      const bgR = sumR / 4;
+      const bgG = sumG / 4;
+      const bgB = sumB / 4;
+      const tolerance = 55;
+
+      function isBgColor(idx) {
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+        const diffCorner = Math.abs(r - bgR) + Math.abs(g - bgG) + Math.abs(b - bgB);
+        const isNearWhite = r > 228 && g > 228 && b > 228;
+        return diffCorner < tolerance || isNearWhite;
+      }
+
+      // Seed border pixels
+      for (let x = 0; x < width; x++) {
+        queue.push(x, (height - 1) * width + x);
+      }
+      for (let y = 0; y < height; y++) {
+        queue.push(y * width, y * width + (width - 1));
+      }
+
+      let head = 0;
+      while (head < queue.length) {
+        const pos = queue[head++];
+        if (visited[pos]) continue;
+        visited[pos] = 1;
+
+        const idx = pos * 4;
+        if (isBgColor(idx)) {
+          data[idx + 3] = 0; // Transparent!
+          const x = pos % width;
+          const y = (pos - x) / width;
+          if (x + 1 < width) queue.push(pos + 1);
+          if (x - 1 >= 0) queue.push(pos - 1);
+          if (y + 1 < height) queue.push(pos + width);
+          if (y - 1 >= 0) queue.push(pos - width);
+        }
+      }
+    }
+
+    function loadImageElement(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = (e) => reject(e);
+        img.src = src;
+      });
+    }
+
+    // =========================================================================
+    // 5. INTERACTIVE CONTROLS (TRANSPARENT TOGGLE, GRID DENSITY, SAVE, COPY)
+    // =========================================================================
+    function toggleTransparentBg() {
+      state.transparentBg = !state.transparentBg;
+      const dot = document.getElementById('bg-toggle-dot');
+      const label = document.getElementById('bg-toggle-label');
+      const frame = document.getElementById('preview-frame');
+
+      if (state.transparentBg) {
+        dot.classList.remove('bg-gray-300');
+        dot.classList.add('bg-mintFresh');
+        label.textContent = 'Transparent BG: ON';
+        frame.classList.add('checkerboard');
+        frame.classList.remove('bg-white');
+      } else {
+        dot.classList.remove('bg-mintFresh');
+        dot.classList.add('bg-gray-300');
+        label.textContent = 'Transparent BG: OFF';
+        frame.classList.remove('checkerboard');
+        frame.classList.add('bg-white');
+      }
+
+      renderQuantizedEmoji();
+    }
+
+    function cyclePixelDensity() {
+      if (state.rawImageElement instanceof HTMLCanvasElement) {
+        showToast('Classic starter emojis use authentic 16×16 pixels!', 'info');
+        return;
+      }
+
+      const sizes = [24, 32, 48];
+      const labels = { 24: '24-bit', 32: '32-bit', 48: '48-bit' };
+      const nextIndex = (sizes.indexOf(state.pixelGridSize) + 1) % sizes.length;
+      state.pixelGridSize = sizes[nextIndex];
+
+      document.getElementById('grid-density-label').textContent = labels[state.pixelGridSize];
+      renderQuantizedEmoji();
+    }
+
+    /**
+     * Downloads the crisp 512x512 PNG file
+     */
+    function downloadEmojiPng() {
+      const canvas = document.getElementById('emoji-canvas');
+      if (!canvas) return;
+
+      const slug = (state.currentPrompt || 'pixiemoji')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '');
+
+      const link = document.createElement('a');
+      link.download = `pixiemoji-${slug || 'emoji'}.png`;
+      link.href = canvas.toDataURL('image/png');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      showToast('💾 Saved crisp 512×512 PNG!', 'success');
+    }
+
+    /**
+     * Copies the generated pixel emoji PNG image (with text fallback) to clipboard
+     */
+    async function copyEmojiToClipboard() {
+      const canvas = document.getElementById('emoji-canvas');
+      const btnText = document.getElementById('copy-btn-text');
+      if (!canvas) return;
+
+      try {
+        if (navigator.clipboard && window.ClipboardItem) {
+          const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+          if (blob) {
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            if (btnText) {
+              btnText.textContent = '✅ Copied!';
+              setTimeout(() => { btnText.textContent = '📋 Copy Emoji'; }, 2000);
+            }
+            showToast('📋 Copied pixel emoji image to clipboard!', 'success');
+            return;
+          }
+        }
+        throw new Error('ClipboardItem unsupported');
+      } catch (err) {
+        try {
+          const textArea = document.createElement('textarea');
+          textArea.value = canvas.toDataURL('image/png');
+          textArea.style.position = 'fixed';
+          textArea.style.opacity = '0';
+          document.body.appendChild(textArea);
+          textArea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textArea);
+
+          if (btnText) {
+            btnText.textContent = '✅ Copied!';
+            setTimeout(() => { btnText.textContent = '📋 Copy Emoji'; }, 2000);
+          }
+          showToast('📋 Copied pixel emoji data URL to clipboard!', 'success');
+        } catch (fallbackErr) {
+          showToast('⚠️ Could not copy directly — try "Save as PNG"!', 'warning');
+        }
+      }
+    }
+
+    // =========================================================================
+    // 6. RECENT CREATIONS, LOADING ANIMATIONS & TOAST NOTIFICATIONS
+    // =========================================================================
+    function addToRecentCreations(prompt, dataUrl, rawImg) {
+      state.recentCreations.unshift({
+        prompt,
+        dataUrl,
+        rawImg,
+        timestamp: Date.now()
+      });
+
+      if (state.recentCreations.length > 12) {
+        state.recentCreations.pop();
+      }
+
+      renderRecentCreations();
+    }
+
+    function renderRecentCreations() {
+      const section = document.getElementById('recent-section');
+      const grid = document.getElementById('recent-grid');
+      const count = document.getElementById('recent-count');
+
+      if (!section || !grid || state.recentCreations.length === 0) return;
+
+      section.classList.remove('hidden');
+      count.textContent = `${state.recentCreations.length} created`;
+      grid.innerHTML = '';
+
+      state.recentCreations.forEach((item, index) => {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'btn-brutal-sm bg-white border-3 border-inkBlack rounded-xl p-2.5 shadow-brutalSm flex flex-col items-center text-center cursor-pointer';
+        card.onclick = () => restoreRecentCreation(index);
+
+        const imgBox = document.createElement('div');
+        imgBox.className = 'w-full aspect-square checkerboard border-2 border-inkBlack rounded-lg p-1.5 mb-1.5 flex items-center justify-center';
+
+        const img = document.createElement('img');
+        img.src = item.dataUrl;
+        img.alt = item.prompt;
+        img.className = 'w-full h-full object-contain pixelated';
+        imgBox.appendChild(img);
+
+        const label = document.createElement('span');
+        label.className = 'font-pixel text-[11px] font-bold text-inkBlack truncate w-full';
+        label.textContent = item.prompt;
+
+        card.appendChild(imgBox);
+        card.appendChild(label);
+        grid.appendChild(card);
+      });
+    }
+
+    function restoreRecentCreation(index) {
+      const item = state.recentCreations[index];
+      if (!item) return;
+
+      state.currentPrompt = item.prompt;
+      state.rawImageElement = item.rawImg;
+
+      document.getElementById('prompt-input').value = item.prompt;
+      document.getElementById('clear-input-btn').classList.remove('hidden');
+      document.getElementById('stage-prompt-title').textContent = `"${item.prompt}"`;
+      document.getElementById('result-headline').textContent = capitalizeTitle(item.prompt);
+
+      const stage = document.getElementById('result-stage');
+      stage.classList.remove('hidden');
+      document.getElementById('loading-panel').classList.add('hidden');
+      document.getElementById('loaded-panel').classList.remove('hidden');
+
+      renderQuantizedEmoji();
+      stage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function startLoadingAnimations() {
+      stopLoadingAnimations(false);
+
+      const statusEl = document.getElementById('loading-status');
+      const barEl = document.getElementById('loading-progress-bar');
+      let msgIdx = 0;
+      let progress = 15;
+
+      if (statusEl) statusEl.textContent = LOADING_MESSAGES[0];
+      if (barEl) barEl.style.width = `${progress}%`;
+
+      state.loadingTimer = setInterval(() => {
+        msgIdx = (msgIdx + 1) % LOADING_MESSAGES.length;
+        if (statusEl) statusEl.textContent = LOADING_MESSAGES[msgIdx];
+      }, 1400);
+
+      state.progressTimer = setInterval(() => {
+        if (progress < 90) {
+          progress += Math.max(2, Math.floor((92 - progress) * 0.18));
+          if (barEl) barEl.style.width = `${Math.min(92, progress)}%`;
+        }
+      }, 350);
+    }
+
+    function stopLoadingAnimations(completed) {
+      if (state.loadingTimer) {
+        clearInterval(state.loadingTimer);
+        state.loadingTimer = null;
+      }
+      if (state.progressTimer) {
+        clearInterval(state.progressTimer);
+        state.progressTimer = null;
+      }
+      const barEl = document.getElementById('loading-progress-bar');
+      if (barEl && completed) {
+        barEl.style.width = '100%';
+      }
+    }
+
+    function capitalizeTitle(text) {
+      return text
+        .split(' ')
+        .filter(Boolean)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+
+      const bgColors = {
+        success: 'bg-mintFresh text-inkBlack',
+        warning: 'bg-sunny text-inkBlack',
+        error: 'bg-electricPink text-white',
+        info: 'bg-white text-inkBlack'
+      };
+
+      const toast = document.createElement('div');
+      toast.className = `pointer-events-auto ${bgColors[type] || bgColors.info} border-4 border-inkBlack rounded-2xl px-4 py-3 font-pixel text-xs sm:text-sm font-bold shadow-brutal transition-all duration-200`;
+      toast.textContent = message;
+
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(8px)';
+        setTimeout(() => toast.remove(), 220);
+      }, 3000);
+    }
+
+    // =========================================================================
+    // 7. INITIALIZE PAGE ON LOAD
+    // =========================================================================
+    window.addEventListener('DOMContentLoaded', () => {
+      renderShowcaseGallery();
+
+      const promptInput = document.getElementById('prompt-input');
+      const clearBtn = document.getElementById('clear-input-btn');
+      if (promptInput && clearBtn) {
+        promptInput.addEventListener('input', () => {
+          if (promptInput.value.trim().length > 0) {
+            clearBtn.classList.remove('hidden');
+          } else {
+            clearBtn.classList.add('hidden');
+          }
+        });
+      }
+    });
+  </script>
+</body>
+</html>
