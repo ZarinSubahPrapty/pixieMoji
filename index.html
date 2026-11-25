@@ -361,6 +361,25 @@
       </div>
     </section>
 
+    <!-- Mobile Touch-and-Hold Save / Copy Modal (Fallback for restricted mobile webviews) -->
+    <div id="mobile-export-modal" class="hidden fixed inset-0 z-50 bg-inkBlack/75 backdrop-blur-xs flex items-center justify-center p-4" onclick="closeMobileExportModal(event)">
+      <div class="bg-white border-4 border-inkBlack rounded-3xl shadow-brutalLg max-w-sm w-full p-5 text-center space-y-4" onclick="event.stopPropagation()">
+        <div class="flex items-center justify-between">
+          <span class="bg-sunny border-2 border-inkBlack px-2.5 py-0.5 rounded-lg font-pixel text-xs font-bold">📱 MOBILE SAVE & COPY</span>
+          <button type="button" onclick="closeMobileExportModal()" class="w-9 h-9 rounded-xl bg-creamBg border-2 border-inkBlack font-pixel font-bold text-sm cursor-pointer">✕</button>
+        </div>
+        <p id="mobile-export-instruction" class="font-pixel text-xs sm:text-sm font-bold text-inkBlack leading-relaxed">
+          Press &amp; hold the emoji below to Save Image or Copy!
+        </p>
+        <div class="w-56 h-56 mx-auto checkerboard border-4 border-inkBlack rounded-2xl p-3 flex items-center justify-center">
+          <img id="mobile-export-img" src="" alt="Pixel Emoji" class="w-full h-full object-contain pixelated" />
+        </div>
+        <button type="button" onclick="closeMobileExportModal()" class="w-full min-h-[46px] bg-mintFresh border-4 border-inkBlack rounded-2xl font-pixel text-sm font-bold shadow-brutalSm cursor-pointer">
+          Done
+        </button>
+      </div>
+    </div>
+
     <!-- Session Recent Creations Strip (Populates as user creates emojis) -->
     <section id="recent-section" class="hidden space-y-3.5 sm:space-y-4">
       <div class="flex items-center justify-between gap-2">
@@ -414,6 +433,496 @@
   </footer>
 
   <script>
+    // =========================================================================
+    // 1. GLOBAL STATE, RANDOM PROMPTS & SHOWCASE GALLERY DATA
+    // =========================================================================
+    const state = {
+      currentPrompt: '',
+      variationIndex: 0,
+      transparentBg: true,
+      gridSize: 32,
+      rawImageElement: null,
+      recentCreations: [],
+      loadingTimer: null,
+      progressTimer: null,
+      isGenerating: false
+    };
+
+    const RANDOM_IDEAS = [
+      'cat', 'rose', 'golden retriever puppy', 'yellow duck', 'monarch butterfly',
+      'pink heart with sunglasses', 'fruit and knife', 'bed and pillow', 'butter and knife',
+      'avocado toast with sunglasses', 'space wizard', 'strawberry', 'pizza', 'rocket',
+      'sailboat', 'rainbow', 'unicorn', 'dragon', 'coffee', 'boba', 'crown', 'ghost'
+    ];
+
+    const LOADING_MESSAGES = [
+      'Mixing colorful pixels...',
+      'Sharpening 8-bit outlines...',
+      'Matching retro palette...',
+      'Polishing crisp edges...'
+    ];
+
+    const SHOWCASE_ITEMS = [
+      { label: 'Cat', prompt: 'cat', code: '1f431', bg: 'bg-sunny/40' },
+      { label: 'Puppy', prompt: 'dog', code: '1f436', bg: 'bg-tangerine/30' },
+      { label: 'Duck', prompt: 'duck', code: '1f986', bg: 'bg-skyPop/30' },
+      { label: 'Rose', prompt: 'rose', code: '1f339', bg: 'bg-electricPink/25' },
+      { label: 'Butterfly', prompt: 'butterfly', code: '1f98b', bg: 'bg-grapePop/25' },
+      { label: 'Pizza', prompt: 'pizza', code: '1f355', bg: 'bg-sunny/40' },
+      { label: 'Rocket', prompt: 'rocket', code: '1f680', bg: 'bg-skyPop/30' },
+      { label: 'Pink Heart', prompt: 'pink heart', code: '1fa77', bg: 'bg-electricPink/25' },
+      { label: 'Ghost', prompt: 'ghost', code: '1f47b', bg: 'bg-grapePop/25' },
+      { label: 'Strawberry', prompt: 'strawberry', code: '1f353', bg: 'bg-mintFresh/30' }
+    ];
+
+    function buildEmojiUrl(code, styleIndex = 0) {
+      const cleanCode = code.toLowerCase();
+      const noFe0f = cleanCode.replace(/-fe0f/g, '');
+      const style = styleIndex % 4;
+      if (style === 0) {
+        return `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${noFe0f}.png`;
+      } else if (style === 1) {
+        return `https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji@15.0.0/color/72x72/${cleanCode.toUpperCase()}.png`;
+      } else if (style === 2) {
+        const notoCode = noFe0f.split('-').map(p => p.padStart(4, '0')).join('_');
+        return `https://cdn.jsdelivr.net/gh/googlefonts/noto-emoji@main/png/128/emoji_u${notoCode}.png`;
+      }
+      return `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${noFe0f}.svg`;
+    }
+
+    function loadImageWithTimeout(url, timeoutMs = 4500) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        const timer = setTimeout(() => reject(new Error('Image timeout')), timeoutMs);
+        img.onload = () => {
+          clearTimeout(timer);
+          if (img.naturalWidth > 0 && img.naturalHeight > 0) resolve(img);
+          else reject(new Error('Empty image'));
+        };
+        img.onerror = () => {
+          clearTimeout(timer);
+          reject(new Error('Image load error'));
+        };
+        img.src = url;
+      });
+    }
+
+    async function loadEmojiCodeImage(code, variation = 0) {
+      const orders = [0, 1, 2, 3];
+      const start = variation % orders.length;
+      const rotated = [...orders.slice(start), ...orders.slice(0, start)];
+      for (const styleIdx of rotated) {
+        try {
+          return await loadImageWithTimeout(buildEmojiUrl(code, styleIdx), 3500);
+        } catch (e) {
+          // Try next CDN style
+        }
+      }
+      throw new Error('Could not load CDN emoji');
+    }
+
+    // =========================================================================
+    // 2. SHOWCASE GALLERY & UI ACTIONS
+    // =========================================================================
+    async function renderShowcaseGallery() {
+      const grid = document.getElementById('showcase-grid');
+      if (!grid) return;
+      grid.innerHTML = '';
+
+      for (const item of SHOWCASE_ITEMS) {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = `btn-brutal-sm ${item.bg} border-4 border-inkBlack rounded-2xl p-3 sm:p-4 shadow-brutalSm flex flex-col items-center text-center cursor-pointer`;
+        card.onclick = () => quickGenerate(item.prompt);
+
+        const frame = document.createElement('div');
+        frame.className = 'w-full aspect-square checkerboard border-3 border-inkBlack rounded-xl p-2.5 mb-2.5 flex items-center justify-center';
+
+        const miniCanvas = document.createElement('canvas');
+        miniCanvas.width = 128;
+        miniCanvas.height = 128;
+        miniCanvas.className = 'w-full h-full object-contain pixelated';
+        frame.appendChild(miniCanvas);
+
+        const label = document.createElement('span');
+        label.className = 'font-pixel text-xs sm:text-sm font-bold text-inkBlack';
+        label.textContent = item.label;
+
+        card.appendChild(frame);
+        card.appendChild(label);
+        grid.appendChild(card);
+
+        loadEmojiCodeImage(item.code, 0).then((img) => {
+          drawPixelatedToCanvas(miniCanvas, img, 24, true, 0);
+        }).catch(() => {});
+      }
+    }
+
+    function handleGenerateSubmit(event) {
+      event.preventDefault();
+      const input = document.getElementById('prompt-input');
+      if (!input) return;
+      const prompt = input.value.trim();
+      if (!prompt) {
+        showToast('✏️ Type an object or idea first!', 'warning');
+        input.focus();
+        return;
+      }
+      input.blur();
+      state.variationIndex = 0;
+      generatePixelEmoji(prompt, 0);
+    }
+
+    function quickGenerate(prompt) {
+      const input = document.getElementById('prompt-input');
+      const clearBtn = document.getElementById('clear-input-btn');
+      if (input) {
+        input.value = prompt;
+        input.blur();
+      }
+      if (clearBtn) clearBtn.classList.remove('hidden');
+      state.variationIndex = 0;
+      generatePixelEmoji(prompt, 0);
+    }
+
+    function tryAgainVariation() {
+      if (!state.currentPrompt || state.isGenerating) return;
+      state.variationIndex += 1;
+      generatePixelEmoji(state.currentPrompt, state.variationIndex);
+    }
+
+    function pickRandomIdea() {
+      const idea = RANDOM_IDEAS[Math.floor(Math.random() * RANDOM_IDEAS.length)];
+      quickGenerate(idea);
+    }
+
+    function clearPromptInput() {
+      const input = document.getElementById('prompt-input');
+      const clearBtn = document.getElementById('clear-input-btn');
+      if (input) {
+        input.value = '';
+        input.focus();
+      }
+      if (clearBtn) clearBtn.classList.add('hidden');
+    }
+
+    function resetToHome(event) {
+      if (event) event.preventDefault();
+      clearPromptInput();
+      const stage = document.getElementById('result-stage');
+      if (stage) stage.classList.add('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function toggleTransparentBg() {
+      state.transparentBg = !state.transparentBg;
+      const dot = document.getElementById('bg-toggle-dot');
+      const label = document.getElementById('bg-toggle-label');
+      if (dot) {
+        dot.className = state.transparentBg
+          ? 'w-3 h-3 rounded-full bg-mintFresh border-2 border-inkBlack inline-block'
+          : 'w-3 h-3 rounded-full bg-electricPink border-2 border-inkBlack inline-block';
+      }
+      if (label) {
+        label.textContent = state.transparentBg ? 'Transparent BG: ON' : 'Transparent BG: OFF';
+      }
+      renderQuantizedEmoji();
+    }
+
+    function cyclePixelDensity() {
+      const sizes = [24, 32, 48];
+      const idx = sizes.indexOf(state.gridSize);
+      state.gridSize = sizes[(idx + 1) % sizes.length];
+      const badge = document.getElementById('grid-size-badge');
+      const densityLabel = document.getElementById('grid-density-label');
+      if (badge) badge.textContent = `${state.gridSize}×${state.gridSize} PX`;
+      if (densityLabel) densityLabel.textContent = `${state.gridSize}-bit`;
+      renderQuantizedEmoji();
+    }
+
+    // =========================================================================
+    // 3. SMART PROMPT PARSING, PAIR/ACCESSORY COMPOSITING & PIXEL ENGINE
+    // =========================================================================
+    function normalizePrompt(raw) {
+      return raw
+        .toLowerCase()
+        .replace(/\beith\b|\bwiht\b|\bwit\b/g, 'with')
+        .replace(/\bsunglass\b/g, 'sunglasses')
+        .replace(/\bavocade\b|\bavacado\b/g, 'avocado')
+        .replace(/[^a-z0-9\s-]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function lookupLexiconExact(phrase) {
+      if (!phrase) return null;
+      const clean = phrase.trim();
+      for (const entry of EMOJI_LEXICON) {
+        if (entry.keys.includes(clean)) return entry.codes;
+      }
+      const words = clean.split(' ').filter(Boolean);
+      for (let len = words.length; len >= 1; len--) {
+        for (let i = 0; i <= words.length - len; i++) {
+          const sub = words.slice(i, i + len).join(' ');
+          for (const entry of EMOJI_LEXICON) {
+            if (entry.keys.includes(sub)) return entry.codes;
+          }
+        }
+      }
+      return null;
+    }
+
+    async function buildCompositeCanvasFromPrompt(rawPrompt, variation) {
+      const normalized = normalizePrompt(rawPrompt);
+
+      // 1. Handle "X and Y" / "X & Y" pairs (e.g., "fruit and knife", "bed and pillow", "butter and knife")
+      const pairMatch = normalized.match(/^(.+?)\s+(?:and|plus)\s+(.+)$/);
+      if (pairMatch) {
+        const leftCodes = lookupLexiconExact(pairMatch[1]);
+        const rightCodes = lookupLexiconExact(pairMatch[2]);
+        if (leftCodes && rightCodes) {
+          const leftCode = leftCodes[variation % leftCodes.length];
+          const rightCode = rightCodes[Math.floor(variation / Math.max(1, leftCodes.length)) % rightCodes.length];
+          const [leftImg, rightImg] = await Promise.all([
+            loadEmojiCodeImage(leftCode, variation),
+            loadEmojiCodeImage(rightCode, variation + 1)
+          ]);
+          const comp = document.createElement('canvas');
+          comp.width = 256;
+          comp.height = 256;
+          const ctx = comp.getContext('2d');
+          ctx.drawImage(leftImg, 12, 44, 128, 128);
+          ctx.drawImage(rightImg, 116, 76, 128, 128);
+          return comp;
+        }
+      }
+
+      // 2. Handle "Subject with Accessory" (e.g., "pink heart with sunglasses", "cool avocado")
+      let accessoryCode = null;
+      let subjectPhrase = normalized;
+      if (normalized.includes('sunglasses') || normalized.startsWith('cool ')) {
+        const stripped = normalized
+          .replace(/\bwith sunglasses\b|\bsunglasses\b|\bcool\b/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (stripped && lookupLexiconExact(stripped)) {
+          subjectPhrase = stripped;
+          accessoryCode = '1f576';
+        }
+      } else if (normalized.includes('crown')) {
+        const stripped = normalized.replace(/\bwith crown\b|\bcrown\b/g, '').replace(/\s+/g, ' ').trim();
+        if (stripped && lookupLexiconExact(stripped)) {
+          subjectPhrase = stripped;
+          accessoryCode = '1f451';
+        }
+      }
+
+      const codes = lookupLexiconExact(subjectPhrase);
+      if (codes && codes.length > 0) {
+        const chosenCode = codes[variation % codes.length];
+        const styleStep = Math.floor(variation / codes.length);
+        const mainImg = await loadEmojiCodeImage(chosenCode, styleStep);
+
+        const comp = document.createElement('canvas');
+        comp.width = 256;
+        comp.height = 256;
+        const ctx = comp.getContext('2d');
+        ctx.drawImage(mainImg, 24, accessoryCode === '1f451' ? 44 : 24, 208, 208);
+
+        if (accessoryCode === '1f576') {
+          const shadesImg = await loadEmojiCodeImage('1f576', 0);
+          ctx.drawImage(shadesImg, 54, 78, 148, 72);
+        } else if (accessoryCode === '1f451') {
+          const crownImg = await loadEmojiCodeImage('1f451', 0);
+          ctx.drawImage(crownImg, 72, 6, 112, 72);
+        }
+        return comp;
+      }
+
+      // 3. Fallback: Clean retro pixel emblem for unknown words
+      return synthesizeCleanEmblem(rawPrompt, variation);
+    }
+
+    function synthesizeCleanEmblem(prompt, variation) {
+      const comp = document.createElement('canvas');
+      comp.width = 256;
+      comp.height = 256;
+      const ctx = comp.getContext('2d');
+      const palettes = [
+        ['#FF5D8F', '#FFD93D'],
+        ['#38BDF8', '#4ADE80'],
+        ['#A855F7', '#FFD93D'],
+        ['#FF922B', '#38BDF8']
+      ];
+      const [c1, c2] = palettes[variation % palettes.length];
+      ctx.fillStyle = c1;
+      ctx.beginPath();
+      ctx.roundRect(32, 32, 192, 192, 44);
+      ctx.fill();
+      ctx.lineWidth = 12;
+      ctx.strokeStyle = '#18181B';
+      ctx.stroke();
+
+      ctx.fillStyle = c2;
+      ctx.beginPath();
+      ctx.arc(128, 128, 64, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      const initials = prompt.trim().slice(0, 2).toUpperCase() || 'PX';
+      ctx.fillStyle = '#18181B';
+      ctx.font = 'bold 64px "Plus Jakarta Sans", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(initials, 128, 134);
+      return comp;
+    }
+
+    async function generatePixelEmoji(prompt, variation) {
+      if (state.isGenerating) return;
+      state.isGenerating = true;
+      state.currentPrompt = prompt;
+
+      const stage = document.getElementById('result-stage');
+      const loadingPanel = document.getElementById('loading-panel');
+      const loadedPanel = document.getElementById('loaded-panel');
+      const titleEl = document.getElementById('stage-prompt-title');
+      const badgeEl = document.getElementById('variation-badge');
+
+      if (stage) stage.classList.remove('hidden');
+      if (loadingPanel) loadingPanel.classList.remove('hidden');
+      if (loadedPanel) loadedPanel.classList.add('hidden');
+      if (titleEl) titleEl.textContent = `"${prompt}"`;
+      if (badgeEl) {
+        badgeEl.textContent = `Version #${variation + 1}`;
+        badgeEl.classList.remove('hidden');
+      }
+
+      startLoadingAnimations();
+      stage?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      try {
+        const sourceCanvas = await buildCompositeCanvasFromPrompt(prompt, variation);
+        state.rawImageElement = sourceCanvas;
+
+        stopLoadingAnimations(true);
+        if (loadingPanel) loadingPanel.classList.add('hidden');
+        if (loadedPanel) loadedPanel.classList.remove('hidden');
+
+        const headline = document.getElementById('result-headline');
+        if (headline) headline.textContent = capitalizeTitle(prompt);
+
+        renderQuantizedEmoji();
+
+        const mainCanvas = document.getElementById('emoji-canvas');
+        if (mainCanvas) {
+          addToRecentCreations(prompt, mainCanvas.toDataURL('image/png'), sourceCanvas);
+        }
+      } catch (err) {
+        stopLoadingAnimations(false);
+        showToast('⚠️ Could not generate right now — try again!', 'error');
+      } finally {
+        state.isGenerating = false;
+      }
+    }
+
+    function drawPixelatedToCanvas(targetCanvas, sourceImg, gridSize, transparentBg, variation = 0) {
+      const outW = targetCanvas.width;
+      const outH = targetCanvas.height;
+      const ctx = targetCanvas.getContext('2d');
+      ctx.clearRect(0, 0, outW, outH);
+
+      if (!transparentBg) {
+        ctx.fillStyle = '#FFFDF5';
+        ctx.fillRect(0, 0, outW, outH);
+      }
+
+      // Downsample onto small pixel grid
+      const small = document.createElement('canvas');
+      small.width = gridSize;
+      small.height = gridSize;
+      const sCtx = small.getContext('2d');
+      sCtx.imageSmoothingEnabled = true;
+
+      // Subtle pose/hue variety across Try Again clicks (6+ distinct versions)
+      const flipH = variation % 4 === 2;
+      const hueShifts = [0, 0, 0, 14, -14, 28, -24, 42];
+      const hue = hueShifts[variation % hueShifts.length];
+
+      sCtx.save();
+      if (hue !== 0 && 'filter' in sCtx) {
+        sCtx.filter = `hue-rotate(${hue}deg) saturate(1.12)`;
+      }
+      if (flipH) {
+        sCtx.translate(gridSize, 0);
+        sCtx.scale(-1, 1);
+      }
+      const pad = Math.max(1, Math.floor(gridSize * 0.06));
+      sCtx.drawImage(sourceImg, pad, pad, gridSize - pad * 2, gridSize - pad * 2);
+      sCtx.restore();
+
+      // Quantize colors & add crisp 1px dark retro outline around opaque pixels
+      const imgData = sCtx.getImageData(0, 0, gridSize, gridSize);
+      const d = imgData.data;
+      const alphaMask = new Uint8Array(gridSize * gridSize);
+
+      for (let i = 0; i < d.length; i += 4) {
+        const idx = i / 4;
+        if (d[i + 3] < 115) {
+          d[i + 3] = 0;
+          alphaMask[idx] = 0;
+        } else {
+          d[i + 3] = 255;
+          d[i] = Math.min(255, Math.round(d[i] / 24) * 24);
+          d[i + 1] = Math.min(255, Math.round(d[i + 1] / 24) * 24);
+          d[i + 2] = Math.min(255, Math.round(d[i + 2] / 24) * 24);
+          alphaMask[idx] = 1;
+        }
+      }
+
+      // Add crisp dark pixel border around silhouette
+      for (let y = 0; y < gridSize; y++) {
+        for (let x = 0; x < gridSize; x++) {
+          const idx = y * gridSize + x;
+          if (alphaMask[idx] === 0) {
+            const hasNeighbor =
+              (x > 0 && alphaMask[idx - 1] === 1) ||
+              (x < gridSize - 1 && alphaMask[idx + 1] === 1) ||
+              (y > 0 && alphaMask[idx - gridSize] === 1) ||
+              (y < gridSize - 1 && alphaMask[idx + gridSize] === 1);
+            if (hasNeighbor) {
+              const p = idx * 4;
+              d[p] = 24;
+              d[p + 1] = 24;
+              d[p + 2] = 27;
+              d[p + 3] = 255;
+            }
+          }
+        }
+      }
+
+      sCtx.putImageData(imgData, 0, 0);
+
+      // Upscale crisply without smoothing
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(small, 0, 0, outW, outH);
+    }
+
+    function renderQuantizedEmoji() {
+      const canvas = document.getElementById('emoji-canvas');
+      if (!canvas || !state.rawImageElement) return;
+      canvas.width = 512;
+      canvas.height = 512;
+      drawPixelatedToCanvas(
+        canvas,
+        state.rawImageElement,
+        state.gridSize,
+        state.transparentBg,
+        state.variationIndex
+      );
+    }
+
     // =========================================================================
     // 4. MULTI-BACKEND REAL ICON & AI PIXEL IMAGE FETCHING (WORKS IN ANY BROWSER)
     // =========================================================================
@@ -1015,1379 +1524,42 @@
     ];
 
     /**
-     * Generates a crisp, recognizable pixel-art emoji of any prompt in ANY browser.
-     * Supports 6+ distinct visual variations per prompt when clicking "Try Again":
-     * - Rotates across matching emoji variants & 3 distinct vector styles
-     *   (Twemoji, OpenMoji, Noto Color Emoji)
-     * - Applies distinct artistic style recipes (pose mirror, vibrant color-way shifts,
-     *   and pixel density tweaks) so every "Try Again" produces a fresh look!
+     * Downloads the crisp 512x512 PNG file (with mobile Blob + Web Share fallback)
      */
-    async function fetchGeminiPixelImage(engineeredPrompt, rawSubject = '', variation = 1) {
-      const apiKey = "";
-      const imageEndpoints = [
-        {
-          url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=${apiKey}`,
-          body: {
-            contents: [{ role: 'user', parts: [{ text: engineeredPrompt }] }],
-            generationConfig: {
-              responseModalities: ['IMAGE'],
-              imageConfig: { aspectRatio: '1:1' }
-            }
+    function canvasToPngBlob(canvas) {
+      return new Promise((resolve) => {
+        if (canvas.toBlob) {
+          canvas.toBlob((blob) => resolve(blob), 'image/png');
+        } else {
+          const dataUrl = canvas.toDataURL('image/png');
+          const byteString = atob(dataUrl.split(',')[1]);
+          const ab = new ArrayBuffer(byteString.length);
+          const ia = new Uint8Array(ab);
+          for (let i = 0; i < byteString.length; i++) {
+            ia[i] = byteString.charCodeAt(i);
           }
-        },
-        {
-          url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-image:generateContent?key=${apiKey}`,
-          body: {
-            contents: [{ role: 'user', parts: [{ text: engineeredPrompt }] }],
-            generationConfig: {
-              responseModalities: ['TEXT', 'IMAGE']
-            }
-          }
+          resolve(new Blob([ab], { type: 'image/png' }));
         }
-      ];
-
-      // 1. Try Gemini Image Generation first (active inside Gemini Canvas)
-      for (const endpoint of imageEndpoints) {
-        try {
-          const response = await fetch(endpoint.url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(endpoint.body)
-          });
-
-          if (response.ok) {
-            const result = await response.json();
-            const parts = result?.candidates?.[0]?.content?.parts || [];
-            const imagePart = parts.find(
-              (p) => (p.inlineData && p.inlineData.data) || (p.inline_data && p.inline_data.data)
-            );
-            if (imagePart) {
-              const inline = imagePart.inlineData || imagePart.inline_data;
-              const mimeType = inline.mimeType || inline.mime_type || 'image/png';
-              return `data:${mimeType};base64,${inline.data}`;
-            }
-          }
-        } catch (err) {
-          // Continue to universal browser CDN emoji engine
-        }
-      }
-
-      const subject = (rawSubject || state.currentPrompt || 'cat').trim().toLowerCase();
-
-      // 2. Instant Global CDN Emoji Lookup (handles single nouns, colors, noun + accessory, and "X and Y" pairs!)
-      const matchResult = findMatchingEmojiCodes(subject);
-      if (matchResult.primaryCodes.length > 0) {
-        const matchedCodes = matchResult.primaryCodes;
-        const secondaryCodes = matchResult.secondaryCodes || [];
-        const isPairMode = matchResult.isPairMode;
-        const requestedHueShift = matchResult.requestedHueShift;
-
-        const pairLen = isPairMode && secondaryCodes.length > 0 ? Math.max(matchedCodes.length, secondaryCodes.length) : matchedCodes.length;
-        const totalBaseCombos = pairLen * 3;
-        const baseIndex = (variation - 1) % totalBaseCombos;
-        const code = matchedCodes[baseIndex % matchedCodes.length];
-        const secondaryCode = secondaryCodes.length > 0
-          ? secondaryCodes[(isPairMode ? baseIndex : 0) % secondaryCodes.length]
-          : null;
-        const styleIndex = Math.floor(baseIndex / pairLen) % 3;
-        const remixCycle = Math.floor((variation - 1) / totalBaseCombos);
-
-        // Distinct artistic variation recipes across 8+ versions (preserving explicit requested colors!)
-        const variationRecipes = requestedHueShift !== null
-          ? [
-              { flipX: false, hueShift: requestedHueShift, saturate: 1.15, brightness: 1.02 },
-              { flipX: false, hueShift: requestedHueShift, saturate: 1.22, brightness: 1.05 },
-              { flipX: true,  hueShift: requestedHueShift, saturate: 1.18, brightness: 1.02 },
-              { flipX: false, hueShift: requestedHueShift + 10, saturate: 1.25, brightness: 1.04 },
-              { flipX: true,  hueShift: requestedHueShift - 10, saturate: 1.25, brightness: 1.04 },
-              { flipX: false, hueShift: requestedHueShift, saturate: 1.3,  brightness: 1.06 }
-            ]
-          : [
-              { flipX: false, hueShift: 0, saturate: 1.08, brightness: 1.0 },
-              { flipX: false, hueShift: 0, saturate: 1.15, brightness: 1.03 },
-              { flipX: true,  hueShift: 0, saturate: 1.1,  brightness: 1.0 },
-              { flipX: false, hueShift: 24, saturate: 1.25, brightness: 1.04 },
-              { flipX: true,  hueShift: -28, saturate: 1.22, brightness: 1.02 },
-              { flipX: false, hueShift: 55, saturate: 1.2,  brightness: 1.05 },
-              { flipX: true,  hueShift: 140, saturate: 1.25, brightness: 1.02 },
-              { flipX: false, hueShift: -65, saturate: 1.25, brightness: 1.04 }
-            ];
-        const recipeIndex = (variation - 1 + remixCycle) % variationRecipes.length;
-        const recipe = variationRecipes[recipeIndex];
-
-        const dataUrl = await renderEmojiWithOptionalAccessory(code, secondaryCode, isPairMode, styleIndex, recipe);
-        if (dataUrl) return dataUrl;
-      }
-
-      // 3. Iconify 200,000+ Vector & Emoji Search (for specialized nouns/phrases)
-      const colorPrefixes = [
-        'fluent-emoji',
-        'noto',
-        'twemoji',
-        'openmoji',
-        'emojione',
-        'streamline-emojis',
-        'fxemoji'
-      ];
-
-      const stopWords = new Set(['a', 'an', 'the', 'with', 'and', 'of', 'in', 'on', 'cute', 'happy', 'pixel', 'emoji', 'icon', 'retro', 'cool', 'little', 'big']);
-      const words = subject
-        .replace(/[^a-z0-9\s-]/g, ' ')
-        .split(/\s+/)
-        .filter((w) => w.length > 1 && !stopWords.has(w));
-
-      const queries = [subject];
-      if (words.length > 1) {
-        queries.push(words.join(' '));
-        [...words].sort((a, b) => b.length - a.length).forEach((w) => {
-          if (!queries.includes(w)) queries.push(w);
-        });
-      }
-
-      for (const q of queries) {
-        const colorSearchUrl = `https://api.iconify.design/search?query=${encodeURIComponent(q)}&prefixes=${colorPrefixes.join(',')}&limit=24`;
-        const iconName = await pickIconFromSearch(colorSearchUrl, variation);
-        if (iconName) {
-          const svgUrl = `https://api.iconify.design/${iconName}.svg?width=512&height=512`;
-          const dataUrl = await renderSvgUrlToDataUrl(svgUrl, false, variation);
-          if (dataUrl) return dataUrl;
-        }
-
-        const generalSearchUrl = `https://api.iconify.design/search?query=${encodeURIComponent(q)}&limit=24`;
-        const generalIconName = await pickIconFromSearch(generalSearchUrl, variation);
-        if (generalIconName) {
-          const svgUrl = `https://api.iconify.design/${generalIconName}.svg?width=512&height=512`;
-          const dataUrl = await renderSvgUrlToDataUrl(svgUrl, true, variation);
-          if (dataUrl) return dataUrl;
-        }
-      }
-
-      // 4. Final Offline/Fallback Guarantee: Clean pixel emblem (never a random robot!)
-      return synthesizeCustomPixelCharacter(subject, variation);
-    }
-
-    function findMatchingEmojiCodes(subject) {
-      // Normalize common typos like "avocade" -> "avocado", "eith" -> "with", "sunglass" -> "sunglasses"
-      const normalized = subject
-        .replace(/\bavocade\b/g, 'avocado')
-        .replace(/\beith\b/g, 'with')
-        .replace(/\bwit\b/g, 'with')
-        .replace(/\bsunglass\b/g, 'sunglasses')
-        .replace(/\bglass\b/g, 'glasses')
-        .replace(/[^a-z0-9\s-]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      const accessoryKeys = new Set(['sunglasses', 'glasses', 'eyeglasses', 'crown', 'hat', 'cap', 'tophat', 'scarf', 'bow', 'sparkle', 'star', 'stars']);
-      const hasCoolAdjective = /\bcool\b/.test(normalized);
-      const isPairPhrase = /\b(and|&|\+)\b/.test(normalized);
-
-      // Detect explicit color modifiers (e.g., "pink", "blue", "purple", "green", "yellow", "orange")
-      const colorHueMap = {
-        pink: -25,
-        magenta: -35,
-        purple: -75,
-        violet: -75,
-        blue: 205,
-        cyan: 175,
-        green: 115,
-        yellow: 48,
-        gold: 42,
-        orange: 24,
-        red: 0
-      };
-      let detectedColor = null;
-      for (const colorWord of Object.keys(colorHueMap)) {
-        if (new RegExp(`\\b${colorWord}\\b`).test(normalized)) {
-          detectedColor = colorWord;
-          break;
-        }
-      }
-
-      const matchedGroups = [];
-
-      for (const entry of EMOJI_LEXICON) {
-        let bestPos = Infinity;
-        let isExact = false;
-        let matchedKeyLen = 0;
-
-        for (const key of entry.keys) {
-          if (normalized === key || normalized === `${key}s` || normalized === `${key}es`) {
-            isExact = true;
-            bestPos = 0;
-            matchedKeyLen = key.length;
-            break;
-          }
-          const regex = new RegExp(`\\b(${key}|${key}s|${key}es)\\b`);
-          const m = regex.exec(normalized);
-          if (m && (m.index < bestPos || (m.index === bestPos && key.length > matchedKeyLen))) {
-            bestPos = m.index;
-            matchedKeyLen = key.length;
-          }
-        }
-
-        if (isExact || bestPos < Infinity) {
-          const primaryKey = entry.keys[0];
-          matchedGroups.push({
-            primaryKey,
-            codes: entry.codes,
-            isExact,
-            pos: bestPos,
-            keyLen: matchedKeyLen,
-            isAccessory: accessoryKeys.has(primaryKey)
-          });
-        }
-      }
-
-      if (matchedGroups.length === 0) {
-        return { primaryCodes: [], secondaryCodes: [], isPairMode: false, requestedHueShift: null };
-      }
-
-      // Exact phrase match takes top priority
-      const exactGroup = matchedGroups.find((g) => g.isExact);
-      if (exactGroup) {
-        return {
-          primaryCodes: exactGroup.codes,
-          secondaryCodes: hasCoolAdjective && exactGroup.primaryKey !== 'sunglasses' ? ['1f576'] : [],
-          isPairMode: false,
-          requestedHueShift: null
-        };
-      }
-
-      // Sort matched nouns by earliest position, preferring longer specific phrases (like "pink heart" over "heart")
-      matchedGroups.sort((a, b) => (a.pos !== b.pos ? a.pos - b.pos : b.keyLen - a.keyLen));
-
-      // Separate core subjects from accessories (so "pink heart eith sunglass" keeps pink heart as the star!)
-      const coreSubjects = matchedGroups.filter((g) => !g.isAccessory);
-      const accessories = matchedGroups.filter((g) => g.isAccessory);
-
-      // Check if the matched primary key already includes the requested color natively (e.g., "pink heart", "green apple")
-      const nativeColorMatched = coreSubjects.length > 0 && detectedColor && coreSubjects[0].primaryKey.includes(detectedColor);
-      const requestedHueShift = (detectedColor && !nativeColorMatched) ? colorHueMap[detectedColor] : null;
-
-      if (coreSubjects.length >= 2 && isPairPhrase) {
-        // e.g., "fruit and knife", "bed and pillow", "butter and knife", "lock and key"
-        return {
-          primaryCodes: coreSubjects[0].codes,
-          secondaryCodes: coreSubjects[1].codes,
-          isPairMode: true,
-          requestedHueShift
-        };
-      }
-
-      if (coreSubjects.length >= 1) {
-        const mainSubject = coreSubjects[0];
-        let accessoryCodes = [];
-        if (accessories.length > 0) {
-          accessoryCodes = accessories[0].codes;
-        } else if (hasCoolAdjective) {
-          accessoryCodes = ['1f576']; // Cool sunglasses overlay!
-        }
-        return {
-          primaryCodes: mainSubject.codes,
-          secondaryCodes: accessoryCodes,
-          isPairMode: false,
-          requestedHueShift
-        };
-      }
-
-      // Only accessories were typed (e.g., "sunglasses" or "crown")
-      return {
-        primaryCodes: accessories[0].codes,
-        secondaryCodes: [],
-        isPairMode: false,
-        requestedHueShift
-      };
-    }
-
-    async function loadCdnEmojiImage(code, preferredStyleIndex = 0) {
-      const cleanCode = code.toLowerCase();
-      const openMojiCode = code.toUpperCase();
-      const notoCode = code.toLowerCase().replace(/-/g, '_');
-
-      const cdnCandidates = [
-        `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${cleanCode}.svg`,
-        `https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji@15.0.0/color/svg/${openMojiCode}.svg`,
-        `https://cdn.jsdelivr.net/gh/googlefonts/noto-emoji@v2.042/svg/emoji_u${notoCode}.svg`
-      ];
-
-      const ordered = [
-        cdnCandidates[preferredStyleIndex % 3],
-        cdnCandidates[(preferredStyleIndex + 1) % 3],
-        cdnCandidates[(preferredStyleIndex + 2) % 3]
-      ];
-
-      for (const url of ordered) {
-        try {
-          const img = await loadImageWithTimeout(url, 6000);
-          if (img) return img;
-        } catch (e) {
-          // Try next CDN style
-        }
-      }
-      return null;
-    }
-
-    async function renderEmojiWithOptionalAccessory(primaryCode, secondaryCode, isPairMode, styleIndex, recipe) {
-      const primaryImg = await loadCdnEmojiImage(primaryCode, styleIndex);
-      if (!primaryImg) return null;
-
-      let secondaryImg = null;
-      if (secondaryCode) {
-        secondaryImg = await loadCdnEmojiImage(secondaryCode, 0);
-      }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = 512;
-      canvas.height = 512;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, 512, 512);
-
-      ctx.save();
-      if (recipe) {
-        const filters = [];
-        if (recipe.hueShift) filters.push(`hue-rotate(${recipe.hueShift}deg)`);
-        if (recipe.saturate && recipe.saturate !== 1) filters.push(`saturate(${recipe.saturate})`);
-        if (recipe.brightness && recipe.brightness !== 1) filters.push(`brightness(${recipe.brightness})`);
-        if (filters.length > 0 && 'filter' in ctx) {
-          ctx.filter = filters.join(' ');
-        }
-        if (recipe.flipX) {
-          ctx.translate(512, 0);
-          ctx.scale(-1, 1);
-        }
-      }
-
-      if (secondaryImg && isPairMode) {
-        // Composite two objects together cleanly (e.g., "butter and knife")
-        ctx.drawImage(primaryImg, 28, 110, 275, 275);
-        ctx.drawImage(secondaryImg, 215, 75, 265, 265);
-      } else {
-        ctx.drawImage(primaryImg, 32, 32, 448, 448);
-        if (secondaryImg) {
-          // Overlay accessory (e.g., sunglasses or crown) directly onto the subject!
-          if (secondaryCode === '1f576') {
-            ctx.drawImage(secondaryImg, 136, 132, 240, 240);
-          } else if (secondaryCode === '1f451' || secondaryCode === '1f3a9' || secondaryCode === '1f9e2') {
-            ctx.drawImage(secondaryImg, 156, 4, 200, 200);
-          } else {
-            ctx.drawImage(secondaryImg, 270, 265, 195, 195);
-          }
-        }
-      }
-
-      ctx.restore();
-      return canvas.toDataURL('image/png');
-    }
-
-    function synthesizeCustomPixelCharacter(subject, variation = 1) {
-      let hash = variation * 2654435761;
-      for (let i = 0; i < subject.length; i++) {
-        hash = ((hash << 5) - hash + subject.charCodeAt(i)) | 0;
-      }
-      const palettes = [
-        ['#FF5D8F', '#FFD93D'],
-        ['#38BDF8', '#4ADE80'],
-        ['#A855F7', '#FFD93D'],
-        ['#FF922B', '#38BDF8']
-      ];
-      const [bgCol, starCol] = palettes[Math.abs(hash) % palettes.length];
-      const letter = (subject.replace(/[^a-zA-Z0-9]/g, '')[0] || 'P').toUpperCase();
-
-      const canvas = document.createElement('canvas');
-      canvas.width = 512;
-      canvas.height = 512;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, 512, 512);
-
-      // Draw a clean pixel badge with the prompt's initial instead of a random robot creature
-      ctx.fillStyle = bgCol;
-      ctx.beginPath();
-      ctx.roundRect(64, 64, 384, 384, 72);
-      ctx.fill();
-
-      ctx.fillStyle = starCol;
-      ctx.font = 'bold 230px "Silkscreen", monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(letter, 256, 272);
-
-      return canvas.toDataURL('image/png');
-    }
-
-    async function pickIconFromSearch(searchUrl, variation = 1) {
-      try {
-        const res = await fetch(searchUrl);
-        if (!res.ok) return null;
-        const data = await res.json();
-        const icons = Array.isArray(data?.icons) ? data.icons : [];
-        if (icons.length === 0) return null;
-
-        // Pick up to 12 different matching variations when the user clicks "Try Again"
-        const index = (variation - 1) % Math.min(icons.length, 12);
-        return icons[index];
-      } catch (err) {
-        return null;
-      }
-    }
-
-    /**
-     * Fetches a crisp transparent SVG from Iconify, colorizes monochrome icons with a
-     * vibrant palette if needed, and rasterizes it cleanly onto a 512x512 canvas.
-     */
-    async function renderSvgUrlToDataUrl(svgUrl, allowColorize = false, variation = 1) {
-      try {
-        const res = await fetch(svgUrl);
-        if (!res.ok) return null;
-        let svgText = await res.text();
-        if (!svgText || !svgText.includes('<svg')) return null;
-
-        // If it's a monochrome icon using currentColor, give it a bright cheerful fill per variation!
-        if (allowColorize && svgText.includes('currentColor')) {
-          const brightColors = ['#FF5D8F', '#FF922B', '#38BDF8', '#A855F7', '#22C55E', '#EF4444', '#F59E0B', '#EC4899'];
-          const chosen = brightColors[(variation - 1) % brightColors.length];
-          svgText = svgText.replace(/currentColor/g, chosen);
-        }
-
-        const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
-        const objectUrl = URL.createObjectURL(svgBlob);
-
-        try {
-          const img = await loadImageWithTimeout(objectUrl, 8000);
-          const canvas = document.createElement('canvas');
-          canvas.width = 512;
-          canvas.height = 512;
-          const ctx = canvas.getContext('2d');
-          ctx.clearRect(0, 0, 512, 512);
-          if (variation % 2 === 0) {
-            ctx.translate(512, 0);
-            ctx.scale(-1, 1);
-          }
-          ctx.drawImage(img, 0, 0, 512, 512);
-          return canvas.toDataURL('image/png');
-        } finally {
-          URL.revokeObjectURL(objectUrl);
-        }
-      } catch (err) {
-        return null;
-      }
-    }
-
-    function loadImageWithTimeout(src, timeoutMs = 10000) {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        const timer = setTimeout(() => {
-          img.src = '';
-          reject(new Error('Image load timed out'));
-        }, timeoutMs);
-
-        img.onload = () => {
-          clearTimeout(timer);
-          if (img.naturalWidth > 0) {
-            resolve(img);
-          } else {
-            reject(new Error('Empty image'));
-          }
-        };
-        img.onerror = (e) => {
-          clearTimeout(timer);
-          reject(e);
-        };
-        img.src = src;
       });
     }
 
-    // =========================================================================
-    // 1. GLOBAL APP STATE & CONSTANTS
-    // =========================================================================
-    const state = {
-      currentPrompt: '',
-      variationCount: 1,
-      isGenerating: false,
-      transparentBg: true,
-      pixelGridSize: 32,
-      rawImageElement: null,
-      recentCreations: [],
-      loadingTimer: null,
-      progressTimer: null
-    };
-
-    const RANDOM_IDEAS = [
-      'happy orange tabby cat',
-      'blooming red rose',
-      'golden retriever puppy',
-      'cute yellow rubber duck',
-      'monarch butterfly',
-      'smiling avocado with sunglasses',
-      'cozy strawberry milk carton',
-      'retro arcade space rocket',
-      'cute frog wearing a crown',
-      'rainbow unicorn head',
-      'hot pepperoni pizza slice',
-      'sleepy panda eating bamboo',
-      'sparkling crystal potion bottle',
-      'kawaii boba milk tea',
-      'friendly little green dinosaur'
-    ];
-
-    const LOADING_MESSAGES = [
-      'Mixing colorful pixels...',
-      'Sharpening 8-bit edges...',
-      'Choosing vibrant palette...',
-      'Inking crisp outlines...',
-      'Polishing your pixel emoji...'
-    ];
-
-    const VARIATION_CUES = [
-      'classic cute front-facing kawaii emoji icon',
-      'playful tilted 3/4 view expressive character icon',
-      'bold retro 16-bit arcade badge icon with bright highlights',
-      'chibi-style adorable rounded icon with big expressive features',
-      'vibrant pop-art pixel sticker icon with rich contrast'
-    ];
-
-    // =========================================================================
-    // 2. HOMEPAGE STARTER PACK (16x16 PIXEL MATRICES)
-    // =========================================================================
-    const STARTER_EMOJIS = [
-      {
-        id: 'cat',
-        name: 'Cat',
-        prompt: 'cute orange cat',
-        tag: 'ANIMAL',
-        bg: 'bg-sunny/30',
-        palette: { K: '#18181B', O: '#FF922B', L: '#FFD93D', P: '#FF8FA3', W: '#FFFFFF' },
-        grid: [
-          '................',
-          '..KK........KK..',
-          '.KOOK......KOOK.',
-          '.KPOOKKKKKKOOPK.',
-          '.KOOOOOOOOOOOOK.',
-          'KOOOOOOOOOOOOOOK',
-          'KOOKKOOOOOOKKOOK',
-          'KOOKWOOOOOOKWOOK',
-          'KOOOOOOKKOOOOOOK',
-          'KPPPOOOOOOOOPPPK',
-          '.KOOOOOKKOOOOOK.',
-          '..KOOOOOOOOOOK..',
-          '...KKKKKKKKKK...',
-          '................',
-          '................',
-          '................'
-        ]
-      },
-      {
-        id: 'dog',
-        name: 'Dog',
-        prompt: 'happy golden puppy',
-        tag: 'ANIMAL',
-        bg: 'bg-tangerine/25',
-        palette: { K: '#18181B', B: '#92400E', T: '#F59E0B', C: '#FDE68A', P: '#FF5D8F', W: '#FFFFFF' },
-        grid: [
-          '................',
-          '...KKKK..KKKK...',
-          '..KBBBBKKBBBBK..',
-          '.KBBBTTTTTTBBBK.',
-          '.KBBTTTTTTTTBBK.',
-          '.KBTTKKTTKKTTBK.',
-          '.KBTTWKTTWKTTBK.',
-          '.KTTTCCCCCCCTTK.',
-          '..KTTCCKKCCCTK..',
-          '..KTTCCCCCCCTK..',
-          '...KTTCPPCCTK...',
-          '....KKKPPKKK....',
-          '.......KK.......',
-          '................',
-          '................',
-          '................'
-        ]
-      },
-      {
-        id: 'duck',
-        name: 'Duck',
-        prompt: 'cute yellow duck',
-        tag: 'BIRD',
-        bg: 'bg-skyPop/25',
-        palette: { K: '#18181B', Y: '#FFD93D', L: '#FEF08A', O: '#FF922B', W: '#FFFFFF' },
-        grid: [
-          '................',
-          '.....KKKKKK.....',
-          '....KYYYYYYK....',
-          '...KYYYYYYYYK...',
-          '...KYYKKYYYYK...',
-          '..KKKKWKYYYYK...',
-          '.KOOOOOKYYYYK...',
-          '..KKKKKYYYYYKK..',
-          '.....KYYYYYYYYK.',
-          '....KYYYLLLLYYYK',
-          '....KYYYYYYYYYYK',
-          '.....KYYYYYYYYK.',
-          '......KKKKKKKK..',
-          '......KO....KO..',
-          '.....KKK...KKK..',
-          '................'
-        ]
-      },
-      {
-        id: 'rose',
-        name: 'Rose',
-        prompt: 'red blooming rose',
-        tag: 'FLOWER',
-        bg: 'bg-electricPink/25',
-        palette: { K: '#18181B', R: '#FF2E63', D: '#BE123C', L: '#FF8FA3', G: '#22C55E', E: '#15803D' },
-        grid: [
-          '................',
-          '.....KKKKKK.....',
-          '....KRRRRRRK....',
-          '...KRRDRRDDRK...',
-          '...KRRRRRRRRK...',
-          '...KDRRLLRRDK...',
-          '....KRRRRRRK....',
-          '.....KKKKKK.....',
-          '....KGGKKGGK....',
-          '...KGGGKKEGGK...',
-          '....KKKGGKKK....',
-          '......KGGK......',
-          '......KGGK......',
-          '......KGGK......',
-          '.......KK.......',
-          '................'
-        ]
-      },
-      {
-        id: 'butterfly',
-        name: 'Butterfly',
-        prompt: 'colorful butterfly',
-        tag: 'NATURE',
-        bg: 'bg-grapePop/25',
-        palette: { K: '#18181B', P: '#A855F7', B: '#38BDF8', Y: '#FFD93D', W: '#FFFFFF' },
-        grid: [
-          '................',
-          '....KK....KK....',
-          '.....K....K.....',
-          '.KKKKKK..KKKKKK.',
-          'KBBWBBKKKKBBWBBK',
-          'KBBBBBKYYKBBBBBK',
-          'KPPPPPKYYKPPPPPK',
-          '.KKKKKKYYKKKKKK.',
-          '.KPPPPKYYKPPPPK.',
-          'KPPYPPKYYKPPYPPK',
-          'KPPPPPKYYKPPPPPK',
-          '.KKKKKK..KKKKKK.',
-          '................',
-          '................',
-          '................',
-          '................'
-        ]
-      },
-      {
-        id: 'pizza',
-        name: 'Pizza',
-        prompt: 'cheesy pepperoni pizza slice',
-        tag: 'FOOD',
-        bg: 'bg-sunny/30',
-        palette: { K: '#18181B', C: '#D97706', Y: '#FFD93D', R: '#EF4444', G: '#22C55E' },
-        grid: [
-          '................',
-          '..KKKKKKKKKKKK..',
-          '.KCCCCCCCCCCCCK.',
-          '..KKKKKKKKKKKK..',
-          '..KYYYYRRYYYYK..',
-          '...KYYYYYYYYK...',
-          '...KYYGYYRYYK...',
-          '....KYYYYYYK....',
-          '....KYYRYYYK....',
-          '.....KYYYYK.....',
-          '.....KYYGYK.....',
-          '......KYYK......',
-          '......KYYK......',
-          '.......KK.......',
-          '................',
-          '................'
-        ]
-      },
-      {
-        id: 'rocket',
-        name: 'Rocket',
-        prompt: 'retro space rocket',
-        tag: 'SPACE',
-        bg: 'bg-skyPop/25',
-        palette: { K: '#18181B', R: '#FF5D8F', W: '#FFFFFF', B: '#38BDF8', Y: '#FFD93D', O: '#FF922B' },
-        grid: [
-          '................',
-          '.......KK.......',
-          '......KRRK......',
-          '.....KRRRRK.....',
-          '.....KWWWWK.....',
-          '....KWWBBWWK....',
-          '....KWWBBWWK....',
-          '....KWWWWWWK....',
-          '...KKWWWWWWKK...',
-          '..KRRKWWWWKRRK..',
-          '.KRRRKWWWWKRRRK.',
-          '.KKKK.KKKK.KKKK.',
-          '......KYYK......',
-          '.....KOOOOK.....',
-          '......KYYK......',
-          '................'
-        ]
-      },
-      {
-        id: 'heart',
-        name: 'Heart',
-        prompt: 'sparkling pixel heart',
-        tag: 'LOVE',
-        bg: 'bg-electricPink/25',
-        palette: { K: '#18181B', R: '#FF2E63', L: '#FF8FA3', W: '#FFFFFF' },
-        grid: [
-          '................',
-          '................',
-          '..KKKK....KKKK..',
-          '.KRRRRK..KRRRRK.',
-          'KRRWLRRKKRRRRRRK',
-          'KRRWLRRRRRRRRRRK',
-          'KRRRRRRRRRRRRRRK',
-          'KRRRRRRRRRRRRRRK',
-          '.KRRRRRRRRRRRRK.',
-          '..KRRRRRRRRRRK..',
-          '...KRRRRRRRRK...',
-          '....KRRRRRRK....',
-          '.....KRRRRK.....',
-          '......KRRK......',
-          '.......KK.......',
-          '................'
-        ]
-      },
-      {
-        id: 'ghost',
-        name: 'Ghost',
-        prompt: 'cute happy pixel ghost',
-        tag: 'SPOOKY',
-        bg: 'bg-grapePop/20',
-        palette: { K: '#18181B', W: '#FFFFFF', S: '#E2E8F0', P: '#FF8FA3' },
-        grid: [
-          '................',
-          '.....KKKKKK.....',
-          '....KWWWWWWK....',
-          '...KWWWWWWWWK...',
-          '..KWWWWWWWWWWK..',
-          '..KWWKKWWKKWWK..',
-          '..KWWKKWWKKWWK..',
-          '..KWPWWWWWWPWK..',
-          '..KWWWWKKWWWWK..',
-          '..KWWWWWWWWWWK..',
-          '..KWWWWWWWWSSK..',
-          '..KWWWWWWWWSSK..',
-          '..KWKKWWWWKKWK..',
-          '..K..KK..KK..K..',
-          '................',
-          '................'
-        ]
-      },
-      {
-        id: 'berry',
-        name: 'Berry',
-        prompt: 'sweet red strawberry',
-        tag: 'FRUIT',
-        bg: 'bg-mintFresh/25',
-        palette: { K: '#18181B', G: '#22C55E', R: '#FF2E63', Y: '#FFD93D', W: '#FFFFFF' },
-        grid: [
-          '................',
-          '.......KK.......',
-          '....KKKKKKKK....',
-          '...KGGGGGGGGK...',
-          '..KKGGGGGGGGKK..',
-          '.KRRRRRRRRRRRRK.',
-          'KRRWRRYRRRRRYRRK',
-          'KRRRRRRRRRRRRRRK',
-          'KRRYRRRRRYRRRRRK',
-          '.KRRRRRRRRRRRRK.',
-          '.KRRYRRRRRYRRRK.',
-          '..KRRRRRRRRRRK..',
-          '...KRRYRRYRRK...',
-          '....KRRRRRRK....',
-          '.....KKKKKK.....',
-          '................'
-        ]
-      }
-    ];
-
-    /**
-     * Renders a 16x16 pixel matrix onto a crisp offscreen canvas
-     */
-    function buildShowcaseCanvas(item, size = 256) {
-      const canvas = document.createElement('canvas');
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext('2d');
-      ctx.imageSmoothingEnabled = false;
-      ctx.clearRect(0, 0, size, size);
-
-      const cell = size / 16;
-      for (let y = 0; y < 16; y++) {
-        const row = item.grid[y] || '';
-        for (let x = 0; x < 16; x++) {
-          const ch = row[x];
-          const color = item.palette[ch];
-          if (color) {
-            ctx.fillStyle = color;
-            ctx.fillRect(x * cell, y * cell, cell, cell);
-          }
-        }
-      }
-      return canvas;
+    function openMobileExportModal(dataUrl, instructionText) {
+      const modal = document.getElementById('mobile-export-modal');
+      const img = document.getElementById('mobile-export-img');
+      const label = document.getElementById('mobile-export-instruction');
+      if (!modal || !img) return;
+      img.src = dataUrl;
+      if (label && instructionText) label.textContent = instructionText;
+      modal.classList.remove('hidden');
     }
 
-    function drawDirectToMainCanvas(sourceCanvas) {
-      const mainCanvas = document.getElementById('emoji-canvas');
-      if (!mainCanvas) return;
-      mainCanvas.width = 512;
-      mainCanvas.height = 512;
-      const ctx = mainCanvas.getContext('2d');
-      ctx.imageSmoothingEnabled = false;
-      ctx.clearRect(0, 0, 512, 512);
-
-      if (!state.transparentBg) {
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, 512, 512);
-      }
-      ctx.drawImage(sourceCanvas, 0, 0, 512, 512);
-      document.getElementById('grid-size-badge').textContent = '16×16 PX';
+    function closeMobileExportModal(event) {
+      if (event && event.target !== event.currentTarget) return;
+      const modal = document.getElementById('mobile-export-modal');
+      if (modal) modal.classList.add('hidden');
     }
 
-    function renderShowcaseGallery() {
-      const grid = document.getElementById('showcase-grid');
-      if (!grid) return;
-      grid.innerHTML = '';
-
-      STARTER_EMOJIS.forEach((item) => {
-        const spriteCanvas = buildShowcaseCanvas(item, 256);
-        const card = document.createElement('button');
-        card.type = 'button';
-        card.className = `btn-brutal ${item.bg} hover:bg-white border-4 border-inkBlack rounded-2xl p-3 sm:p-4 shadow-brutal flex flex-col items-center text-center cursor-pointer group`;
-        card.onclick = () => openShowcaseEmoji(item, spriteCanvas);
-
-        const previewWrap = document.createElement('div');
-        previewWrap.className = 'w-full aspect-square checkerboard border-3 border-inkBlack rounded-xl p-2.5 sm:p-3 mb-2.5 sm:mb-3 flex items-center justify-center overflow-hidden';
-
-        const img = document.createElement('img');
-        img.src = spriteCanvas.toDataURL('image/png');
-        img.alt = item.name;
-        img.className = 'w-full h-full object-contain pixelated group-hover:scale-110 transition-transform duration-150';
-        previewWrap.appendChild(img);
-
-        const tag = document.createElement('span');
-        tag.className = 'font-pixel text-[10px] font-bold bg-white border-2 border-inkBlack px-2 py-0.5 rounded-md mb-1';
-        tag.textContent = item.tag;
-
-        const title = document.createElement('span');
-        title.className = 'font-pixel text-xs sm:text-sm font-bold text-inkBlack';
-        title.textContent = item.name;
-
-        card.appendChild(previewWrap);
-        card.appendChild(tag);
-        card.appendChild(title);
-        grid.appendChild(card);
-      });
-    }
-
-    function openShowcaseEmoji(item, spriteCanvas) {
-      state.currentPrompt = item.prompt;
-      state.variationCount = 1;
-      state.rawImageElement = spriteCanvas;
-
-      const input = document.getElementById('prompt-input');
-      if (input) input.value = item.prompt;
-      document.getElementById('clear-input-btn').classList.remove('hidden');
-
-      document.getElementById('stage-prompt-title').textContent = `"${item.name}"`;
-      document.getElementById('result-headline').textContent = `${item.name} Pixel Emoji`;
-      const badge = document.getElementById('variation-badge');
-      badge.textContent = 'Starter Classic';
-      badge.classList.remove('hidden');
-
-      const stage = document.getElementById('result-stage');
-      stage.classList.remove('hidden');
-      document.getElementById('loading-panel').classList.add('hidden');
-      document.getElementById('loaded-panel').classList.remove('hidden');
-
-      drawDirectToMainCanvas(spriteCanvas);
-      stage.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-
-    // =========================================================================
-    // 3. USER INTERACTION HANDLERS & GENERATION ORCHESTRATOR
-    // =========================================================================
-    function handleGenerateSubmit(event) {
-      if (event) event.preventDefault();
-      const input = document.getElementById('prompt-input');
-      const prompt = (input?.value || '').trim();
-      if (!prompt) {
-        showToast('✏️ Type something first (e.g., cat, rose, rocket)!', 'warning');
-        if (input) input.focus();
-        return;
-      }
-      if (input) input.blur();
-      state.variationCount = 1;
-      generatePixelEmoji(prompt, 1);
-    }
-
-    function quickGenerate(promptText) {
-      const input = document.getElementById('prompt-input');
-      if (input) {
-        input.value = promptText;
-        input.blur();
-        document.getElementById('clear-input-btn')?.classList.remove('hidden');
-      }
-      state.variationCount = 1;
-      generatePixelEmoji(promptText, 1);
-    }
-
-    function tryAgainVariation() {
-      const input = document.getElementById('prompt-input');
-      const prompt = (state.currentPrompt || input?.value || '').trim();
-      if (!prompt) {
-        showToast('✏️ Enter a prompt first!', 'warning');
-        return;
-      }
-      state.variationCount = (state.variationCount || 1) + 1;
-      generatePixelEmoji(prompt, state.variationCount);
-    }
-
-    function pickRandomIdea() {
-      const choice = RANDOM_IDEAS[Math.floor(Math.random() * RANDOM_IDEAS.length)];
-      quickGenerate(choice);
-    }
-
-    function clearPromptInput() {
-      const input = document.getElementById('prompt-input');
-      const clearBtn = document.getElementById('clear-input-btn');
-      if (input) {
-        input.value = '';
-        input.focus();
-      }
-      if (clearBtn) clearBtn.classList.add('hidden');
-    }
-
-    function resetToHome(event) {
-      if (event) event.preventDefault();
-      clearPromptInput();
-      const stage = document.getElementById('result-stage');
-      if (stage) stage.classList.add('hidden');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-
-    async function generatePixelEmoji(promptText, variation = 1) {
-      if (state.isGenerating) return;
-      state.isGenerating = true;
-      state.currentPrompt = promptText;
-
-      const generateBtn = document.getElementById('generate-btn');
-      const stage = document.getElementById('result-stage');
-      const loadingPanel = document.getElementById('loading-panel');
-      const loadedPanel = document.getElementById('loaded-panel');
-      const variationBadge = document.getElementById('variation-badge');
-
-      if (generateBtn) generateBtn.disabled = true;
-      if (stage) stage.classList.remove('hidden');
-      if (loadingPanel) loadingPanel.classList.remove('hidden');
-      if (loadedPanel) loadedPanel.classList.add('hidden');
-
-      document.getElementById('stage-prompt-title').textContent = `"${promptText}"`;
-      if (variationBadge) {
-        variationBadge.textContent = `Version #${variation}`;
-        variationBadge.classList.remove('hidden');
-      }
-
-      stage?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      startLoadingAnimations();
-
-      try {
-        const cue = VARIATION_CUES[(variation - 1) % VARIATION_CUES.length];
-        const engineeredPrompt = `16-bit pixel art emoji icon of ${promptText}, ${cue}, centered single object, bold crisp dark outline, flat solid vibrant colors, no gradients, no anti-aliasing, isolated on pure solid #FFFFFF white background`;
-
-        const imageDataUrl = await fetchGeminiPixelImage(engineeredPrompt, promptText, variation);
-        const imgEl = await loadImageElement(imageDataUrl);
-
-        state.rawImageElement = imgEl;
-        stopLoadingAnimations(true);
-
-        document.getElementById('result-headline').textContent = `${capitalizeTitle(promptText)} Emoji`;
-        if (loadingPanel) loadingPanel.classList.add('hidden');
-        if (loadedPanel) loadedPanel.classList.remove('hidden');
-
-        renderQuantizedEmoji();
-
-        const mainCanvas = document.getElementById('emoji-canvas');
-        if (mainCanvas) {
-          addToRecentCreations(promptText, mainCanvas.toDataURL('image/png'), imgEl);
-        }
-      } catch (err) {
-        stopLoadingAnimations(false);
-        if (loadingPanel) loadingPanel.classList.add('hidden');
-        showToast('⚠️ Could not find a pixel icon for that phrase — try simpler words!', 'error');
-      } finally {
-        state.isGenerating = false;
-        if (generateBtn) generateBtn.disabled = false;
-      }
-    }
-
-    // =========================================================================
-    // 5. PIXEL QUANTIZATION, PALETTE SNAP & OUTLINE RENDERING
-    // =========================================================================
-    function renderQuantizedEmoji() {
-      if (!state.rawImageElement) return;
-      if (state.rawImageElement instanceof HTMLCanvasElement) {
-        drawDirectToMainCanvas(state.rawImageElement);
-        return;
-      }
-
-      const gridSize = state.pixelGridSize;
-      const srcW = state.rawImageElement.naturalWidth || state.rawImageElement.width || 512;
-      const srcH = state.rawImageElement.naturalHeight || state.rawImageElement.height || 512;
-
-      // Step 1: Draw full-resolution source onto working canvas
-      const fullCanvas = document.createElement('canvas');
-      fullCanvas.width = srcW;
-      fullCanvas.height = srcH;
-      const fCtx = fullCanvas.getContext('2d', { willReadFrequently: true });
-      fCtx.imageSmoothingEnabled = false;
-      fCtx.drawImage(state.rawImageElement, 0, 0, srcW, srcH);
-
-      const fullImgData = fCtx.getImageData(0, 0, srcW, srcH);
-      const fullData = fullImgData.data;
-
-      // Only run white-background flood fill if corners are actually opaque (e.g. non-transparent photos)
-      const topLeftAlpha = fullData[3];
-      const topRightAlpha = fullData[(srcW - 1) * 4 + 3];
-      if (topLeftAlpha > 200 && topRightAlpha > 200) {
-        removeOuterBackgroundFloodFill(fullData, srcW, srcH);
-        fCtx.putImageData(fullImgData, 0, 0);
-      }
-
-      // Step 2: Find tight non-transparent bounding box of the subject
-      let minX = srcW, minY = srcH, maxX = -1, maxY = -1;
-      for (let y = 0; y < srcH; y++) {
-        for (let x = 0; x < srcW; x++) {
-          const alpha = fullData[(y * srcW + x) * 4 + 3];
-          if (alpha > 128) {
-            if (x < minX) minX = x;
-            if (x > maxX) maxX = x;
-            if (y < minY) minY = y;
-            if (y > maxY) maxY = y;
-          }
-        }
-      }
-
-      // Fallback if image was completely empty
-      if (maxX < minX || maxY < minY) {
-        minX = 0; minY = 0; maxX = srcW - 1; maxY = srcH - 1;
-      }
-
-      const boxW = maxX - minX + 1;
-      const boxH = maxY - minY + 1;
-      const maxDim = Math.max(boxW, boxH);
-      // Add ~10% clean square margin so a 1px dark outline fits comfortably
-      const paddedSize = Math.ceil(maxDim * 1.14);
-      const offsetX = Math.floor((paddedSize - boxW) / 2);
-      const offsetY = Math.floor((paddedSize - boxH) / 2);
-
-      const croppedSquare = document.createElement('canvas');
-      croppedSquare.width = paddedSize;
-      croppedSquare.height = paddedSize;
-      const cCtx = croppedSquare.getContext('2d');
-      cCtx.imageSmoothingEnabled = false;
-      cCtx.drawImage(
-        fullCanvas,
-        minX, minY, boxW, boxH,
-        offsetX, offsetY, boxW, boxH
-      );
-
-      // Step 3: Sharp center-pixel sampling onto N x N grid (NO bilinear smoothing!)
-      const smallCanvas = document.createElement('canvas');
-      smallCanvas.width = gridSize;
-      smallCanvas.height = gridSize;
-      const sCtx = smallCanvas.getContext('2d', { willReadFrequently: true });
-      sCtx.imageSmoothingEnabled = false;
-      sCtx.drawImage(croppedSquare, 0, 0, gridSize, gridSize);
-
-      const imgData = sCtx.getImageData(0, 0, gridSize, gridSize);
-      const data = imgData.data;
-
-      // Hard-threshold alpha so there are zero semi-transparent blurry edges
-      for (let i = 0; i < data.length; i += 4) {
-        data[i + 3] = data[i + 3] >= 128 ? 255 : 0;
-      }
-
-      // Step 4: K-Means color quantization for bold, solid, mud-free pixel colors
-      quantizeToCrispPalette(data, 20);
-
-      // Step 5: Crisp 1px dark outline (#18181B) reinforcement around silhouette
-      applyCrispPixelOutline(data, gridSize, gridSize);
-
-      // If user toggled Transparent BG OFF, fill transparent cells with pure white
-      if (!state.transparentBg) {
-        for (let i = 0; i < data.length; i += 4) {
-          if (data[i + 3] === 0) {
-            data[i] = 255;
-            data[i + 1] = 255;
-            data[i + 2] = 255;
-            data[i + 3] = 255;
-          }
-        }
-      }
-
-      sCtx.putImageData(imgData, 0, 0);
-
-      // Step 6: Upscale onto 512x512 canvas with nearest-neighbor crisp edges
-      const mainCanvas = document.getElementById('emoji-canvas');
-      mainCanvas.width = 512;
-      mainCanvas.height = 512;
-      const mCtx = mainCanvas.getContext('2d');
-      mCtx.imageSmoothingEnabled = false;
-      mCtx.clearRect(0, 0, 512, 512);
-      mCtx.drawImage(smallCanvas, 0, 0, 512, 512);
-
-      document.getElementById('grid-size-badge').textContent = `${gridSize}×${gridSize} PX`;
-    }
-
-    /**
-     * K-Means palette quantization + vibrancy boost so every pixel snaps to a
-     * clean, flat, high-contrast color instead of blurry averaged tones.
-     */
-    function quantizeToCrispPalette(data, maxColors = 20) {
-      const opaqueIndices = [];
-      const pixels = [];
-
-      for (let i = 0; i < data.length; i += 4) {
-        if (data[i + 3] === 255) {
-          opaqueIndices.push(i);
-          pixels.push([data[i], data[i + 1], data[i + 2]]);
-        }
-      }
-
-      if (pixels.length === 0) return;
-
-      const k = Math.min(maxColors, pixels.length);
-      // Deterministic evenly-spaced initial centroids for consistent results
-      const centroids = [];
-      const step = Math.max(1, Math.floor(pixels.length / k));
-      for (let c = 0; c < k; c++) {
-        const p = pixels[Math.min(c * step, pixels.length - 1)];
-        centroids.push([p[0], p[1], p[2]]);
-      }
-
-      const assignments = new Int32Array(pixels.length);
-
-      // Run 6 fast K-Means iterations
-      for (let iter = 0; iter < 6; iter++) {
-        const sumR = new Float64Array(k);
-        const sumG = new Float64Array(k);
-        const sumB = new Float64Array(k);
-        const counts = new Int32Array(k);
-
-        for (let pIdx = 0; pIdx < pixels.length; pIdx++) {
-          const [r, g, b] = pixels[pIdx];
-          let bestC = 0;
-          let bestDist = Infinity;
-
-          for (let c = 0; c < k; c++) {
-            const dr = r - centroids[c][0];
-            const dg = g - centroids[c][1];
-            const db = b - centroids[c][2];
-            const dist = dr * dr + dg * dg + db * db;
-            if (dist < bestDist) {
-              bestDist = dist;
-              bestC = c;
-            }
-          }
-
-          assignments[pIdx] = bestC;
-          sumR[bestC] += r;
-          sumG[bestC] += g;
-          sumB[bestC] += b;
-          counts[bestC]++;
-        }
-
-        for (let c = 0; c < k; c++) {
-          if (counts[c] > 0) {
-            centroids[c][0] = Math.round(sumR[c] / counts[c]);
-            centroids[c][1] = Math.round(sumG[c] / counts[c]);
-            centroids[c][2] = Math.round(sumB[c] / counts[c]);
-          }
-        }
-      }
-
-      // Snap near-black colors to pure #18181B ink and apply quantized palette
-      for (let pIdx = 0; pIdx < pixels.length; pIdx++) {
-        const idx = opaqueIndices[pIdx];
-        let [r, g, b] = centroids[assignments[pIdx]];
-
-        if (r < 52 && g < 52 && b < 58) {
-          r = 24; g = 24; b = 27;
-        }
-
-        data[idx] = r;
-        data[idx + 1] = g;
-        data[idx + 2] = b;
-      }
-    }
-
-    /**
-     * Adds a razor-sharp 1px dark outline (#18181B) around any opaque sprite pixel
-     * touching transparency so every emoji pops cleanly like a classic 16-bit icon.
-     */
-    function applyCrispPixelOutline(data, width, height) {
-      const isOpaque = new Uint8Array(width * height);
-      for (let i = 0; i < width * height; i++) {
-        isOpaque[i] = data[i * 4 + 3] === 255 ? 1 : 0;
-      }
-
-      const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-      for (let y = 1; y < height - 1; y++) {
-        for (let x = 1; x < width - 1; x++) {
-          const pos = y * width + x;
-          if (isOpaque[pos]) continue;
-
-          let touchesSubject = false;
-          for (let d = 0; d < dirs.length; d++) {
-            const nx = x + dirs[d][0];
-            const ny = y + dirs[d][1];
-            if (isOpaque[ny * width + nx]) {
-              touchesSubject = true;
-              break;
-            }
-          }
-
-          if (touchesSubject) {
-            const idx = pos * 4;
-            data[idx] = 24;
-            data[idx + 1] = 24;
-            data[idx + 2] = 27;
-            data[idx + 3] = 255;
-          }
-        }
-      }
-    }
-
-    /**
-     * Flood-fills from all 4 border edges to remove solid light/uniform backgrounds
-     * while preserving white eyes, highlights, or teeth inside the emoji!
-     */
-    function removeOuterBackgroundFloodFill(data, width, height) {
-      const visited = new Uint8Array(width * height);
-      const queue = [];
-
-      // Sample all 4 corners to handle slight background gradients cleanly
-      const corners = [
-        0,
-        (width - 1) * 4,
-        ((height - 1) * width) * 4,
-        ((height - 1) * width + (width - 1)) * 4
-      ];
-      let sumR = 0, sumG = 0, sumB = 0;
-      corners.forEach(cIdx => {
-        sumR += data[cIdx];
-        sumG += data[cIdx + 1];
-        sumB += data[cIdx + 2];
-      });
-      const bgR = sumR / 4;
-      const bgG = sumG / 4;
-      const bgB = sumB / 4;
-      const tolerance = 55;
-
-      function isBgColor(idx) {
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-        const diffCorner = Math.abs(r - bgR) + Math.abs(g - bgG) + Math.abs(b - bgB);
-        const isNearWhite = r > 228 && g > 228 && b > 228;
-        return diffCorner < tolerance || isNearWhite;
-      }
-
-      // Seed border pixels
-      for (let x = 0; x < width; x++) {
-        queue.push(x, (height - 1) * width + x);
-      }
-      for (let y = 0; y < height; y++) {
-        queue.push(y * width, y * width + (width - 1));
-      }
-
-      let head = 0;
-      while (head < queue.length) {
-        const pos = queue[head++];
-        if (visited[pos]) continue;
-        visited[pos] = 1;
-
-        const idx = pos * 4;
-        if (isBgColor(idx)) {
-          data[idx + 3] = 0; // Transparent!
-          const x = pos % width;
-          const y = (pos - x) / width;
-          if (x + 1 < width) queue.push(pos + 1);
-          if (x - 1 >= 0) queue.push(pos - 1);
-          if (y + 1 < height) queue.push(pos + width);
-          if (y - 1 >= 0) queue.push(pos - width);
-        }
-      }
-    }
-
-    function loadImageElement(src) {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => resolve(img);
-        img.onerror = (e) => reject(e);
-        img.src = src;
-      });
-    }
-
-    // =========================================================================
-    // 5. INTERACTIVE CONTROLS (TRANSPARENT TOGGLE, GRID DENSITY, SAVE, COPY)
-    // =========================================================================
-    function toggleTransparentBg() {
-      state.transparentBg = !state.transparentBg;
-      const dot = document.getElementById('bg-toggle-dot');
-      const label = document.getElementById('bg-toggle-label');
-      const frame = document.getElementById('preview-frame');
-
-      if (state.transparentBg) {
-        dot.classList.remove('bg-gray-300');
-        dot.classList.add('bg-mintFresh');
-        label.textContent = 'Transparent BG: ON';
-        frame.classList.add('checkerboard');
-        frame.classList.remove('bg-white');
-      } else {
-        dot.classList.remove('bg-mintFresh');
-        dot.classList.add('bg-gray-300');
-        label.textContent = 'Transparent BG: OFF';
-        frame.classList.remove('checkerboard');
-        frame.classList.add('bg-white');
-      }
-
-      renderQuantizedEmoji();
-    }
-
-    function cyclePixelDensity() {
-      if (state.rawImageElement instanceof HTMLCanvasElement) {
-        showToast('Classic starter emojis use authentic 16×16 pixels!', 'info');
-        return;
-      }
-
-      const sizes = [24, 32, 48];
-      const labels = { 24: '24-bit', 32: '32-bit', 48: '48-bit' };
-      const nextIndex = (sizes.indexOf(state.pixelGridSize) + 1) % sizes.length;
-      state.pixelGridSize = sizes[nextIndex];
-
-      document.getElementById('grid-density-label').textContent = labels[state.pixelGridSize];
-      renderQuantizedEmoji();
-    }
-
-    /**
-     * Downloads the crisp 512x512 PNG file
-     */
-    function downloadEmojiPng() {
+    async function downloadEmojiPng() {
       const canvas = document.getElementById('emoji-canvas');
       if (!canvas) return;
 
@@ -2395,40 +1567,95 @@
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/(^-|-$)/g, '');
+      const filename = `pixiemoji-${slug || 'emoji'}.png`;
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-      const link = document.createElement('a');
-      link.download = `pixiemoji-${slug || 'emoji'}.png`;
-      link.href = canvas.toDataURL('image/png');
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      try {
+        const blob = await canvasToPngBlob(canvas);
+        if (!blob) throw new Error('Blob failed');
 
-      showToast('💾 Saved crisp 512×512 PNG!', 'success');
+        // On mobile browsers where <a download> can be ignored (especially iOS Safari / in-app browsers),
+        // offer native Share Sheet ("Save Image") if available, or trigger Blob download + touch-hold fallback
+        if (isMobile && navigator.share && navigator.canShare) {
+          try {
+            const file = new File([blob], filename, { type: 'image/png' });
+            if (navigator.canShare({ files: [file] })) {
+              await navigator.share({
+                files: [file],
+                title: 'pixieMoji Pixel Emoji'
+              });
+              showToast('💾 Saved / shared pixel emoji!', 'success');
+              return;
+            }
+          } catch (shareErr) {
+            if (shareErr && shareErr.name === 'AbortError') return;
+          }
+        }
+
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = blobUrl;
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+
+        if (isMobile) {
+          openMobileExportModal(canvas.toDataURL('image/png'), 'Download started! If your browser blocked it, press & hold the image below and tap "Save Image".');
+        } else {
+          showToast('💾 Saved crisp 512×512 PNG!', 'success');
+        }
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
+        openMobileExportModal(canvas.toDataURL('image/png'), 'Press & hold the emoji below and tap "Save Image" to save to your phone!');
+      }
     }
 
     /**
-     * Copies the generated pixel emoji PNG image (with text fallback) to clipboard
+     * Copies the generated pixel emoji PNG image to clipboard (supports iOS Safari, Android Chrome & Desktop)
      */
     async function copyEmojiToClipboard() {
       const canvas = document.getElementById('emoji-canvas');
       const btnText = document.getElementById('copy-btn-text');
       if (!canvas) return;
 
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
       try {
         if (navigator.clipboard && window.ClipboardItem) {
-          const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-          if (blob) {
-            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-            if (btnText) {
-              btnText.textContent = '✅ Copied!';
-              setTimeout(() => { btnText.textContent = '📋 Copy Emoji'; }, 2000);
-            }
-            showToast('📋 Copied pixel emoji image to clipboard!', 'success');
-            return;
+          // Passing a Promise directly into ClipboardItem preserves the user-tap gesture on iOS Safari!
+          const blobPromise = canvasToPngBlob(canvas);
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]);
+          if (btnText) {
+            btnText.textContent = '✅ Copied!';
+            setTimeout(() => { btnText.textContent = '📋 Copy Emoji'; }, 2000);
           }
+          showToast('📋 Copied pixel emoji image to clipboard!', 'success');
+          return;
         }
         throw new Error('ClipboardItem unsupported');
       } catch (err) {
+        // Mobile fallback: open native Share Sheet or Touch-and-Hold Copy modal instead of copying raw base64 text
+        if (isMobile) {
+          try {
+            const blob = await canvasToPngBlob(canvas);
+            const file = new File([blob], 'pixiemoji.png', { type: 'image/png' });
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+              await navigator.share({
+                files: [file],
+                title: 'pixieMoji Pixel Emoji'
+              });
+              return;
+            }
+          } catch (shareErr) {
+            if (shareErr && shareErr.name === 'AbortError') return;
+          }
+          openMobileExportModal(canvas.toDataURL('image/png'), 'Press & hold the emoji below and tap "Copy" to copy the image!');
+          return;
+        }
+
         try {
           const textArea = document.createElement('textarea');
           textArea.value = canvas.toDataURL('image/png');
